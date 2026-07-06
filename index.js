@@ -997,7 +997,7 @@ export default {
         const now = new Date();
         const next = LunarCalendar.nextLunarDate(task.lunarMonth, task.lunarDay, task.lunarLeap, now);
         if (!next) return errorResponse('无法计算农历日期', 400);
-        newNext = \`\${next.year}-\${String(next.month).padStart(2,'0')}-\${String(next.day).padStart(2,'0')}\`;
+        newNext = `${next.year}-${String(next.month).padStart(2,'0')}-${String(next.day).padStart(2,'0')}`;
       } else {
         return errorResponse('未知模式', 400);
       }
