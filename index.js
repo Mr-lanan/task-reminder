@@ -763,14 +763,26 @@ async function sendNotification(config, title, content, task) {
 
         case 'notifyx':
           if (!config.notifyxApiKey) { result.error = '未配置 NotifyX'; break; }
-          const nx = await fetch('https://notifyx.cn/api/send', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.notifyxApiKey },
-            body: JSON.stringify({ title, content })
-          });
-          const nxd = await nx.json();
-          result.success = (nxd.code === 200);
-          if (!result.success) result.error = nxd.msg || '发送失败';
-          break;
+          try {
+            const nx = await fetch('https://notifyx.cn/api/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.notifyxApiKey },
+              body: JSON.stringify({ title, content })
+            });
+            const text = await nx.text(); // 先获取文本
+            let nxd;
+            try {
+              nxd = JSON.parse(text);
+            } catch (e) {
+              result.error = 'API 返回非 JSON: ' + text.substring(0, 100);
+              break;
+            }
+    result.success = (nxd.code === 200);
+    if (!result.success) result.error = nxd.msg || '发送失败';
+  } catch (e) {
+    result.error = e.message;
+  }
+  break;
 
         default:
           result.error = '未知渠道';
