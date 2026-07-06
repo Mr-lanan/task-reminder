@@ -762,20 +762,38 @@ async function sendNotification(config, title, content, task) {
           break;
 
         case 'notifyx':
-          if (!config.notifyxApiKey) { result.error = '未配置 NotifyX'; break; }
+          if (!config.notifyxApiKey) { result.error = '未配置 NotifyX API Key'; break; }
           try {
-            const nx = await fetch('https://notifyx.cn/api/send', {
+            const url = `https://www.notifyx.cn/api/v1/send/${config.notifyxApiKey}`;
+            const payload = {
+              title: title,
+              content: content,
+              description: content.substring(0, 200), // 可选，截取前200字符
+              // team: '你的群组ID' // 可选，如果需要群组推送可取消注释并配置
+              };
+            const nx = await fetch(url, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.notifyxApiKey },
-              body: JSON.stringify({ title, content })
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
             });
-            const text = await nx.text(); // 先获取文本
+            const text = await nx.text();
             let nxd;
             try {
               nxd = JSON.parse(text);
             } catch (e) {
               result.error = 'API 返回非 JSON: ' + text.substring(0, 100);
               break;
+            }
+    // 根据官方文档，成功时返回 { status: 'queued' }，但不确定是否有 code，简单判断 status 存在即可
+    if (nxd.status === 'queued' || nxd.id) {
+      result.success = true;
+    } else {
+      result.error = nxd.message || '发送失败';
+    }
+  } catch (e) {
+    result.error = e.message;
+  }
+  break;
             }
     result.success = (nxd.code === 200);
     if (!result.success) result.error = nxd.msg || '发送失败';
