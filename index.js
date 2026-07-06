@@ -1,6 +1,9 @@
 // ============================================================
 // 配置读取
 // ============================================================
+// 全局固定检测间隔，移除可配置逻辑
+const FIX_CHECK_INTERVAL = 5;
+
 async function getConfig(env) {
   const kv = env.TASKS_KV;
   let config = {};
@@ -8,13 +11,12 @@ async function getConfig(env) {
     const raw = await kv.get('config');
     if (raw) config = JSON.parse(raw);
   } catch (e) {}
-
   config.username = env.DEFAULT_USERNAME || config.username || 'admin';
   config.password = env.DEFAULT_PASSWORD || config.password || 'admin123';
   config.jwtSecret = env.JWT_SECRET || config.jwtSecret || 'change-this-secret';
-  config.checkInterval = parseInt(config.checkInterval) || 5;
+  // 硬编码固定5分钟，不再读取存储值
+  config.checkInterval = FIX_CHECK_INTERVAL;
   config.enableLogging = config.enableLogging !== undefined ? config.enableLogging : true;
-
   if (typeof config.notifierTypes === 'string') {
     config.notifierTypes = config.notifierTypes.split(',').map(s => s.trim()).filter(Boolean);
   } else if (!Array.isArray(config.notifierTypes)) {
@@ -39,6 +41,7 @@ const lunarInfo = [
   [2029, 2, 13, '己酉', [30,29,30,29,30,29,29,30,29,30,30,29], 7, 29],
   [2030, 2, 3, '庚戌', [29,30,29,30,29,30,29,30,29,30,29,30], 0, 0],
 ];
+
 const lunarMonthNames = ['', '正月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '冬月', '腊月'];
 const lunarDayNames = ['', '初一', '初二', '初三', '初四', '初五', '初六', '初七', '初八', '初九', '初十',
   '十一', '十二', '十三', '十四', '十五', '十六', '十七', '十八', '十九', '二十',
@@ -53,9 +56,9 @@ function getLunarFromDate(dateStr) {
   if (year < 2020 || year > 2030) return null;
   const info = lunarInfo.find(e => e[0] === year);
   if (!info) return null;
-  const springDate = new Date(info[1] + '-' + String(info[2]).padStart(2,'0') + 'T00:00:00+08:00');
+  const springDate = new Date(info[0] + '-' + String(info[1]).padStart(2,'0') + '-' + String(info[2]).padStart(2,'0') + 'T00:00:00+08:00');
   const diffDays = Math.floor((date - springDate) / (1000*60*60*24));
-  if (diffDays < 0) return null; // 春节前不考虑
+  if (diffDays < 0) return null;
   const months = info[4];
   const leapMonth = info[5];
   const leapDays = info[6];
@@ -87,6 +90,10 @@ function getLunarFromDate(dateStr) {
 }
 
 async function fetchLunar(dateStr) {
+  // 优先本地内置农历，不再依赖第三方接口，彻底解决获取失败
+  const localRes = getLunarFromDate(dateStr);
+  if (localRes) return { full: localRes.full };
+  // 本地无数据才走网络兜底
   try {
     const url = `https://api.2xb.cn/lunar/?date=${dateStr}`;
     const resp = await fetch(url);
@@ -95,8 +102,7 @@ async function fetchLunar(dateStr) {
     if (data && data.lunar) return { full: data.lunar };
     throw new Error('数据格式异常');
   } catch (e) {
-    const result = getLunarFromDate(dateStr);
-    return result ? { full: result.full } : { full: '农历获取失败' };
+    return { full: `${dateStr}（超出2020-2030农历区间）` };
   }
 }
 
@@ -150,7 +156,7 @@ function getLoginPage() {
 }
 
 // ============================================================
-// HTML 主面板
+// HTML 主面板（改动：移除间隔输入框 + 新增农历选择按钮）
 // ============================================================
 function getDashboardPage() {
   return `<!DOCTYPE html>
@@ -200,7 +206,7 @@ function getDashboardPage() {
   .modal-content { background: #fff; border-radius: 16px; padding: 32px; max-width: 680px; width: 95%; max-height: 90vh; overflow-y: auto; }
   .modal-content input, .modal-content select, .modal-content textarea { width: 100%; padding: 10px 12px; margin-bottom: 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; transition: 0.15s; }
   .modal-content input:focus, .modal-content select:focus, .modal-content textarea:focus { border-color: #4a6cf7; outline: none; }
-  .modal-content .form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .modal-content .form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
   .modal-content .form-row > * { flex: 1; min-width: 120px; }
   .modal-content .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
   .modal-content .form-actions button { padding: 10px 28px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; transition: 0.15s; }
@@ -225,438 +231,847 @@ function getDashboardPage() {
   .next-date-display { font-weight: 600; color: #4a6cf7; background: #f0f4ff; padding: 4px 12px; border-radius: 20px; display: inline-block; }
   .reverse-hint { font-size: 12px; color: #999; margin-left: 8px; cursor: pointer; text-decoration: underline; }
   .time-error { color: #e74c3c; font-size: 12px; margin-top: -12px; margin-bottom: 12px; display: none; }
+  .lunar-pick-btn { margin-bottom:16px; }
   @media (max-width:600px){ .task-grid{grid-template-columns:1fr;} .reminder-group{flex-wrap:wrap;} .dashboard{grid-template-columns:1fr 1fr;} }
 </style></head>
+
 <body>
+
 <div class="container" id="app">
+
   <div class="lunar-display" id="lunarDisplay">🌙 加载农历中...</div>
   
+
   <div class="dashboard" id="dashboard">
+
     <div class="stat"><div class="number" id="statTotal">0</div><div class="label">📋 总任务</div></div>
+
     <div class="stat"><div class="number danger" id="statExpired">0</div><div class="label">⚠️ 已过期</div></div>
+
     <div class="stat"><div class="number warning" id="statSoon">0</div><div class="label">⏳ 即将到期</div></div>
+
     <div class="stat"><div class="number" id="statActive">0</div><div class="label">✅ 进行中</div></div>
+
     <div class="stat"><div class="number" id="statNextCheck">--</div><div class="label">🕒 下次检查</div></div>
+
     <div class="stat clickable" onclick="openLogModal()"><div class="number">📋</div><div class="label">查看日志</div></div>
+
   </div>
 
   <div class="header">
+
     <h1>📋 任务提醒</h1>
+
     <div class="header-actions">
+
       <button class="btn-primary" onclick="openAddModal()">➕ 新建</button>
+
       <button class="btn-config" onclick="openConfigModal()">⚙️ 配置</button>
+
       <button class="btn-danger" onclick="logout()">退出</button>
+
     </div>
+
   </div>
+
   <div id="taskList" class="task-grid"></div>
+
 </div>
 
 <!-- 任务弹窗 -->
+
 <div class="modal" id="taskModal">
+
   <div class="modal-content">
+
     <h2 id="taskModalTitle">新建任务</h2>
+
     <input type="hidden" id="editId">
+
     <label>任务名称 *</label><input type="text" id="taskName" placeholder="例如：月度报告">
+
     <label>模式</label>
+
     <select id="taskMode" onchange="toggleModeFields()">
+
       <option value="periodic">周期模式</option>
+
       <option value="countdown">倒数日模式</option>
+
     </select>
+
     <div class="mode-hint" id="modeHint">周期模式：设置开始日期和周期，提醒日 = 开始日 + 周期</div>
+
     <div id="periodicFields">
+
       <div class="form-row">
+
         <div><label>开始日期</label><input type="date" id="startDate" onchange="updateNextDateFromStart()"></div>
+        <button class="btn-sm btn-outline lunar-pick-btn" onclick="openLunarPicker('startDate')">选农历</button>
+
         <div><label>周期数值</label><input type="number" id="periodValue" value="1" min="1" onchange="updateNextDateFromStart()"></div>
+
         <div><label>周期单位</label>
+
           <select id="periodUnit" onchange="updateNextDateFromStart()">
+
             <option value="day">日</option><option value="week">周</option><option value="month" selected>月</option><option value="year">年</option>
+
           </select>
+
         </div>
+
       </div>
+
     </div>
+
     <div id="countdownFields" style="display:none;">
+
       <label>间隔天数（多少天后提醒）</label>
+
       <input type="number" id="countdownDays" value="30" min="1" onchange="updateNextDateFromCountdown()">
+
     </div>
+
     <div class="form-row">
+
       <div><label>提醒日期</label><input type="date" id="reminderDate" onchange="reverseCalculate()"></div>
+      <button class="btn-sm btn-outline lunar-pick-btn" onclick="openLunarPicker('reminderDate')">选农历</button>
+
       <div><label>提醒时间（北京时间）</label><input type="time" id="remindTime" value="08:00" step="60" onchange="validateTime()" oninput="validateTime()"></div>
+
     </div>
-    <div id="timeError" class="time-error">⚠️ 提醒分钟必须是检测间隔的倍数</div>
+
+    <div id="timeError" class="time-error">⚠️ 提醒分钟必须是5的倍数</div>
+
     <div style="margin-bottom:12px;">
+
       <span class="next-date-display" id="nextDateDisplay">📅 提醒日：未计算</span>
+
       <span class="reverse-hint" onclick="reverseCalculate()">🔄 点击提醒日期反向计算</span>
+
     </div>
+
     <label>提前提醒（点击 ➕ 添加多组，单位：天/小时）</label>
+
     <div id="reminderDaysContainer"></div>
+
     <button class="btn-primary btn-sm" onclick="addReminderGroup()">➕ 添加一组</button>
+
     <label>备注</label><textarea id="remark" rows="2"></textarea>
+
     <div class="form-actions">
+
       <button class="btn-outline" onclick="closeModal('taskModal')">取消</button>
+
       <button class="btn-primary" id="saveTaskBtn" onclick="saveTask()">保存</button>
+
+    </div>
+
+  </div>
+
+</div>
+
+<!-- 农历选择弹窗 -->
+<div class="modal" id="lunarPickerModal">
+  <div class="modal-content" style="max-width:400px;">
+    <h3>选择农历日期（2020-2030）</h3>
+    <input type="hidden" id="targetDateInput">
+    <label>年份</label>
+    <select id="lpYear">
+      <option>2020</option><option>2021</option><option>2022</option><option>2023</option><option>2024</option>
+      <option>2025</option><option selected>2026</option><option>2027</option><option>2028</option><option>2029</option><option>2030</option>
+    </select>
+    <label>农历月份</label>
+    <select id="lpMonth">
+      <option value="1">正月</option><option value="2">二月</option><option value="3">三月</option><option value="4">四月</option>
+      <option value="5">五月</option><option value="6">六月</option><option value="7">七月</option><option value="8">八月</option>
+      <option value="9">九月</option><option value="10">十月</option><option value="11">冬月</option><option value="12">腊月</option>
+    </select>
+    <label>农历日期</label>
+    <select id="lpDay">
+      <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
+      <option>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>20</option>
+      <option>21</option><option>22</option><option>23</option><option>24</option><option>25</option><option>26</option><option>27</option><option>28</option><option>29</option><option>30</option>
+    </select>
+    <div class="form-actions" style="margin-top:16px;">
+      <button class="btn-outline" onclick="closeModal('lunarPickerModal')">取消</button>
+      <button class="btn-primary" onclick="confirmLunarDate()">确定选择</button>
     </div>
   </div>
 </div>
 
 <!-- 历史弹窗 -->
+
 <div class="modal" id="historyModal">
+
   <div class="modal-content">
+
     <h2>📜 续订历史</h2>
+
     <div id="historyList"></div>
+
     <div class="form-actions"><button class="btn-outline" onclick="closeModal('historyModal')">关闭</button></div>
+
   </div>
+
 </div>
 
 <!-- 日志弹窗 -->
+
 <div class="modal" id="logModal">
+
   <div class="modal-content" style="max-width:800px;">
+
     <h2>📋 推送日志 <span style="font-size:12px;color:#999;font-weight:normal;">（最近100条）</span></h2>
+
     <div id="logList" style="max-height:60vh;overflow-y:auto;"></div>
+
     <div class="form-actions">
+
       <button class="btn-outline" onclick="clearLogs()">🗑️ 清空日志</button>
+
       <button class="btn-outline" onclick="closeModal('logModal')">关闭</button>
+
     </div>
+
   </div>
+
 </div>
 
-<!-- 配置弹窗 -->
+<!-- 配置弹窗（移除检测间隔输入框） -->
+
 <div class="modal" id="configModal">
+
   <div class="modal-content">
+
     <h2>⚙️ 系统配置</h2>
+
     <label>用户名</label><input type="text" id="cfgUsername">
+
     <label>密码</label><input type="text" id="cfgPassword">
-    <label>检测间隔（分钟）</label>
-    <input type="number" id="cfgInterval" min="1" max="60" value="5" onchange="validateInterval()" oninput="validateInterval()">
-    <div style="font-size:12px;color:#888;margin-top:-8px;margin-bottom:12px;">建议 1-60，任务提醒分钟必须为间隔倍数</div>
+
+    <div style="padding:8px 12px;background:#eef8ff;border-radius:8px;margin-bottom:16px;font-size:14px;color:#226;">
+      ⏱ 检测间隔固定为5分钟，不可自定义
+    </div>
+
     <label><input type="checkbox" id="cfgLogging" checked> 启用日志记录</label>
+
     <hr>
+
     <label>推送渠道（可多选）</label>
+
     <div class="config-checkbox-group" id="notifierCheckboxes">
+
       <label><input type="checkbox" value="serverchan"> Server酱</label>
+
       <label><input type="checkbox" value="pushplus"> PushPlus</label>
+
       <label><input type="checkbox" value="telegram"> Telegram</label>
+
       <label><input type="checkbox" value="email"> 邮件(Resend)</label>
+
       <label><input type="checkbox" value="notifyx"> NotifyX</label>
+
     </div>
+
     <div id="notifierConfigFields"></div>
+
     <div class="form-actions">
+
       <button class="btn-outline" onclick="closeModal('configModal')">取消</button>
+
       <button class="btn-primary" onclick="saveConfig()">保存</button>
+
     </div>
+
   </div>
+
 </div>
 
 <div class="toast" id="toast"></div>
 
 <script>
+
   const API_BASE = '';
+
   let token = localStorage.getItem('token') || '';
+
   let reminderGroupCounter = 0;
-  let checkInterval = 5;
+
+  // 固定5分钟，不再从接口读取
+  const checkInterval = 5;
 
   function getHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
+
   function showToast(msg, type) {
+
     type = type || 'success';
+
     const t = document.getElementById('toast');
+
     t.textContent = msg; t.className = 'toast ' + type + ' show';
+
     clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+
   }
+
   function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
   function openModal(id) { document.getElementById(id).classList.add('show'); }
+
   function formatDate(d) { if(!d)return'-'; const dt=new Date(d); return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+
   function formatFullDate(d) { if(!d)return'-'; const dt=new Date(d); return dt.toLocaleString('zh-CN'); }
+
   function addDays(dateStr, days) { const d=new Date(dateStr); d.setDate(d.getDate()+days); return d.toISOString().split('T')[0]; }
 
   // 获取农历
   async function fetchLunarForDate(dateStr) {
+
     try {
+
       const resp = await fetch('/api/lunar?date=' + dateStr, { headers: getHeaders() });
+
       const data = await resp.json();
+
       return data.lunar || '农历获取失败';
+
     } catch(e) { return '农历获取失败'; }
+
   }
 
   // 更新当前农历显示
   async function updateLunarDisplay() {
+
     try {
+
       const today = new Date().toISOString().split('T')[0];
+
       const lunar = await fetchLunarForDate(today);
+
       document.getElementById('lunarDisplay').textContent = '🌙 ' + lunar;
+
     } catch(e) { document.getElementById('lunarDisplay').textContent = '🌙 农历获取失败'; }
+
+  }
+
+  // 农历选择弹窗打开
+  function openLunarPicker(inputId) {
+    document.getElementById('targetDateInput').value = inputId;
+    openModal('lunarPickerModal');
+  }
+
+  // 农历转公历确认填充
+  async function confirmLunarDate() {
+    const year = document.getElementById('lpYear').value;
+    const lunarMonth = parseInt(document.getElementById('lpMonth').value);
+    const lunarDay = parseInt(document.getElementById('lpDay').value);
+    const targetInputId = document.getElementById('targetDateInput').value;
+    // 简易转换仅使用内置lunarInfo反向匹配
+    const info = lunarInfo.find(i=>i[0]==year);
+    if(!info){
+      showToast('超出2020-2030年份范围', 'error');
+      return;
+    }
+    const springY = info[0];
+    const springM = info[1];
+    const springD = info[2];
+    const springDate = new Date(`${springY}-${String(springM).padStart(2,'0')}-${String(springD).padStart(2,'0')}T00:00:00+08:00`);
+    const months = info[4];
+    const leapM = info[5];
+    const leapD = info[6];
+    let totalDays = 0;
+    for(let m=1;m<lunarMonth;m++){
+      totalDays += months[m-1];
+      if(leapM && m === leapM) totalDays += leapD;
+    }
+    totalDays += (lunarDay - 1);
+    const targetDate = new Date(springDate);
+    targetDate.setDate(targetDate.getDate() + totalDays);
+    const std = formatDate(targetDate);
+    document.getElementById(targetInputId).value = std;
+    closeModal('lunarPickerModal');
+    updateNextDateFromStart();
+    showToast(`已选中公历:${std}`);
   }
 
   // 计算下次检查时间
   function getNextCheckTime() {
+
     const now = new Date();
+
     const minutes = now.getMinutes();
+
     const remainder = minutes % checkInterval;
+
     let nextMinutes = minutes + (checkInterval - remainder);
+
     if (remainder === 0) nextMinutes = minutes + checkInterval;
+
     const next = new Date(now);
+
     next.setMinutes(nextMinutes, 0, 0);
+
     return next.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
   }
+
   function updateNextCheckDisplay() {
+
     document.getElementById('statNextCheck').textContent = getNextCheckTime();
+
   }
 
   async function fetchInterval() {
-    try {
-      const resp = await fetch('/api/config', { headers: getHeaders() });
-      const data = await resp.json();
-      if (data.checkInterval) checkInterval = parseInt(data.checkInterval) || 5;
-    } catch(e) { checkInterval = 5; }
+    // 固定5，无需请求接口
     updateNextCheckDisplay();
   }
 
   // 验证时间分钟
   function validateTime() {
+
     const timeInput = document.getElementById('remindTime');
+
     const errorEl = document.getElementById('timeError');
+
     const saveBtn = document.getElementById('saveTaskBtn');
+
     if (!timeInput.value) { errorEl.style.display = 'none'; saveBtn.disabled = false; return; }
+
     const parts = timeInput.value.split(':');
+
     const minute = parseInt(parts[1]);
+
     if (minute % checkInterval !== 0) {
+
       errorEl.style.display = 'block';
-      errorEl.textContent = '⚠️ 提醒分钟必须是 ' + checkInterval + ' 的倍数（当前 ' + minute + '）';
+
+      errorEl.textContent = '⚠️ 提醒分钟必须是 5 的倍数（当前 ' + minute + '）';
+
       saveBtn.disabled = true;
+
     } else {
+
       errorEl.style.display = 'none';
+
       saveBtn.disabled = false;
+
     }
+
   }
 
   // 模式切换
   function toggleModeFields() {
+
     const mode = document.getElementById('taskMode').value;
+
     document.getElementById('periodicFields').style.display = (mode === 'periodic') ? 'block' : 'none';
+
     document.getElementById('countdownFields').style.display = (mode === 'countdown') ? 'block' : 'none';
+
     document.getElementById('modeHint').textContent = (mode === 'periodic') ? '周期模式：设置开始日期和周期，提醒日 = 开始日 + 周期' : '倒数日模式：设置间隔天数，提醒日 = 今天 + 间隔天数';
+
     updateNextDateFromStart();
+
   }
 
   function updateNextDateFromStart() {
+
     const mode = document.getElementById('taskMode').value;
+
     let nextDate = null;
+
     if (mode === 'periodic') {
+
       const start = document.getElementById('startDate').value;
+
       const val = parseInt(document.getElementById('periodValue').value);
+
       const unit = document.getElementById('periodUnit').value;
+
       if (start && val > 0) {
+
         const d = new Date(start);
+
         switch(unit) {
+
           case 'day': d.setDate(d.getDate()+val); break;
+
           case 'week': d.setDate(d.getDate()+val*7); break;
+
           case 'month': d.setMonth(d.getMonth()+val); break;
+
           case 'year': d.setFullYear(d.getFullYear()+val); break;
+
         }
+
         nextDate = d.toISOString().split('T')[0];
+
       }
+
     } else {
+
       const days = parseInt(document.getElementById('countdownDays').value);
+
       if (days > 0) {
+
         const today = new Date();
+
         today.setDate(today.getDate()+days);
+
         nextDate = today.toISOString().split('T')[0];
+
       }
+
     }
+
     if (nextDate) {
+
       document.getElementById('reminderDate').value = nextDate;
+
       document.getElementById('nextDateDisplay').textContent = '📅 提醒日：' + nextDate;
+
     } else {
+
       document.getElementById('reminderDate').value = '';
+
       document.getElementById('nextDateDisplay').textContent = '📅 提醒日：未计算';
+
     }
+
   }
 
   function reverseCalculate() {
+
     const mode = document.getElementById('taskMode').value;
+
     const reminderDate = document.getElementById('reminderDate').value;
+
     if (!reminderDate) { showToast('请先选择提醒日期', 'error'); return; }
+
     if (mode === 'periodic') {
+
       const val = parseInt(document.getElementById('periodValue').value);
+
       const unit = document.getElementById('periodUnit').value;
+
       if (!val || val < 1) { showToast('请输入有效的周期数值', 'error'); return; }
+
       const d = new Date(reminderDate);
+
       switch(unit) {
+
         case 'day': d.setDate(d.getDate()-val); break;
+
         case 'week': d.setDate(d.getDate()-val*7); break;
+
         case 'month': d.setMonth(d.getMonth()-val); break;
+
         case 'year': d.setFullYear(d.getFullYear()-val); break;
+
       }
+
       const start = d.toISOString().split('T')[0];
+
       document.getElementById('startDate').value = start;
+
       showToast('已根据提醒日反算开始日期：' + start);
+
     } else {
+
       const today = new Date();
+
       const remind = new Date(reminderDate);
+
       const diffTime = remind - today;
+
       const diffDays = Math.ceil(diffTime / (1000*60*60*24));
+
       if (diffDays < 1) { showToast('提醒日必须在今天之后', 'error'); return; }
+
       document.getElementById('countdownDays').value = diffDays;
+
       showToast('已计算间隔天数：' + diffDays + ' 天');
+
     }
+
     updateNextDateFromStart();
+
   }
 
   // 提醒组
   function addReminderGroup(value, unit) {
+
     const container = document.getElementById('reminderDaysContainer');
+
     const div = document.createElement('div');
+
     div.className = 'reminder-group';
+
     div.dataset.index = reminderGroupCounter++;
+
     const input = document.createElement('input');
+
     input.type = 'number'; input.min = 1; input.placeholder = '例如 3';
+
     if (value) input.value = value;
+
     input.required = true;
+
     const select = document.createElement('select');
+
     select.innerHTML = '<option value="day">天</option><option value="hour">小时</option>';
+
     if (unit) select.value = unit;
+
     const delBtn = document.createElement('button');
+
     delBtn.textContent = '✕'; delBtn.className = 'btn-danger btn-sm';
+
     delBtn.onclick = function() { div.remove(); };
+
     div.appendChild(input); div.appendChild(select); div.appendChild(delBtn);
+
     container.appendChild(div);
+
   }
 
   function loadReminderGroups(groups) {
+
     const container = document.getElementById('reminderDaysContainer');
+
     container.innerHTML = '';
+
     reminderGroupCounter = 0;
+
     if (!groups || groups.length === 0) {
+
       addReminderGroup(3, 'day');
+
     } else {
+
       groups.forEach(g => addReminderGroup(g.value, g.unit || 'day'));
+
     }
+
   }
 
   function getReminderGroups() {
+
     const groups = document.querySelectorAll('#reminderDaysContainer .reminder-group');
+
     const result = [];
+
     groups.forEach(div => {
+
       const input = div.querySelector('input');
+
       const select = div.querySelector('select');
+
       const val = parseInt(input.value);
+
       if (!isNaN(val) && val > 0) {
+
         result.push({ value: val, unit: select.value });
+
       }
+
     });
+
     return result;
+
   }
 
   async function checkAuth() {
+
     if(!token){ window.location.href='/login'; return false; }
+
     try { const resp = await fetch('/api/tasks', { headers: getHeaders() }); if(resp.status===401){ localStorage.removeItem('token'); window.location.href='/login'; return false; } return true; } catch(e){ return false; }
+
   }
 
   // 加载任务
   async function loadTasks() {
+
     if(!await checkAuth()) return;
+
     try {
+
       const resp = await fetch('/api/tasks', { headers: getHeaders() });
+
       const data = await resp.json();
+
       const tasks = data.tasks || [];
+
       const container = document.getElementById('taskList');
+
       if(tasks.length===0){ container.innerHTML='<div class="empty-state"><p>暂无任务，点击「新建」添加</p></div>'; } else {
+
         container.innerHTML = tasks.map(t => {
+
           const now = new Date(); const nextDate = new Date(t.nextReminder + 'T' + (t.remindTime||'08:00') + ':00+08:00');
+
           const isExpired = nextDate < now;
+
           const unitMap = { day:'日', week:'周', month:'月', year:'年' };
+
           const modeLabel = t.mode === 'countdown' ? '倒数日' : '周期';
+
           const reminderStr = (t.reminderDays || []).map((g,i) => {
+
             const u = t.reminderUnits && t.reminderUnits[i] ? t.reminderUnits[i] : 'day';
+
             return g + (u === 'hour' ? '小时' : '天');
+
           }).join(', ') || '无';
-          return \`
-            <div class="task-card" style="border-left-color:\${isExpired?'#e74c3c':'#2ecc71'}">
-              <div class="title">\${t.name} <span style="font-size:12px;color:#999;">[\${modeLabel}]</span></div>
-              <div class="info"><strong>周期/倒数：</strong>\${t.mode==='periodic' ? '每 '+t.periodValue+' '+unitMap[t.periodUnit] : '每 '+t.countdownDays+' 天'}</div>
-              <div class="info"><strong>开始/基准：</strong>\${t.mode==='periodic' ? formatDate(t.startDate) : '（从今天起）'}</div>
-              <div class="info"><strong>提醒日：</strong>\${formatDate(t.nextReminder)} \${t.remindTime||'08:00'} <span class="lunar-date" data-date="\${t.nextReminder}" style="font-size:12px;color:#888;">加载农历...</span></div>
-              <div class="info"><strong>提前提醒：</strong>\${reminderStr}</div>
-              <div class="info"><strong>备注：</strong>\${t.remark||'-'}</div>
-              <span class="status \${isExpired?'status-expired':'status-active'}">\${isExpired?'⚠️ 已过期':'✅ 进行中'}</span>
+
+          return `
+            <div class="task-card" style="border-left-color:${isExpired?'#e74c3c':'#2ecc71'}">
+              <div class="title">${t.name} <span style="font-size:12px;color:#999;">[${modeLabel}]</span></div>
+              <div class="info"><strong>周期/倒数：</strong>${t.mode==='periodic' ? '每 '+t.periodValue+' '+unitMap[t.periodUnit] : '每 '+t.countdownDays+' 天'}</div>
+              <div class="info"><strong>开始/基准：</strong>${t.mode==='periodic' ? formatDate(t.startDate) : '（从今天起）'}</div>
+              <div class="info"><strong>提醒日：</strong>${formatDate(t.nextReminder)} ${t.remindTime||'08:00'} <span class="lunar-date" data-date="${t.nextReminder}" style="font-size:12px;color:#888;">加载农历...</span></div>
+              <div class="info"><strong>提前提醒：</strong>${reminderStr}</div>
+              <div class="info"><strong>备注：</strong>${t.remark||'-'}</div>
+              <span class="status ${isExpired?'status-expired':'status-active'}">${isExpired?'⚠️ 已过期':'✅ 进行中'}</span>
               <div class="actions">
-                <button class="btn-success btn-sm" onclick="renewTask('\${t.id}')">🔄 续订</button>
-                <button class="btn-primary btn-sm" onclick="editTask('\${t.id}')">✏️ 编辑</button>
-                <button class="btn-history btn-sm" onclick="viewHistory('\${t.id}')">📜 历史</button>
-                <button class="btn-warning btn-sm" onclick="testTask('\${t.id}')">📤 测试</button>
-                <button class="btn-danger btn-sm" onclick="deleteTask('\${t.id}')">🗑️ 删除</button>
+                <button class="btn-success btn-sm" onclick="renewTask('${t.id}')">🔄 续订</button>
+                <button class="btn-primary btn-sm" onclick="editTask('${t.id}')">✏️ 编辑</button>
+                <button class="btn-history btn-sm" onclick="viewHistory('${t.id}')">📜 历史</button>
+                <button class="btn-warning btn-sm" onclick="testTask('${t.id}')">📤 测试</button>
+                <button class="btn-danger btn-sm" onclick="deleteTask('${t.id}')">🗑️ 删除</button>
               </div>
             </div>
-          \`;
+          `;
+
         }).join('');
+
         // 异步加载每个任务的农历
         const lunarSpans = document.querySelectorAll('.lunar-date');
+
         for (const span of lunarSpans) {
+
           const date = span.dataset.date;
+
           if (date) {
+
             const lunar = await fetchLunarForDate(date);
+
             span.textContent = lunar;
+
           }
+
         }
+
       }
+
       updateDashboard(tasks);
+
       updateNextCheckDisplay();
+
     } catch(e) { showToast('加载失败','error'); }
+
   }
 
   function updateDashboard(tasks) {
+
     const now = new Date();
+
     const total = tasks.length;
+
     let expired = 0, soon = 0, active = 0;
+
     tasks.forEach(t => {
+
       const dt = new Date(t.nextReminder + 'T' + (t.remindTime||'08:00') + ':00+08:00');
+
       if (dt < now) expired++;
+
       else if ((dt - now) < 24*60*60*1000) soon++;
+
       else active++;
+
     });
+
     document.getElementById('statTotal').textContent = total;
+
     document.getElementById('statExpired').textContent = expired;
+
     document.getElementById('statSoon').textContent = soon;
+
     document.getElementById('statActive').textContent = active;
+
   }
 
   // 打开日志
   async function openLogModal() {
+
     const resp = await fetch('/api/logs', { headers: getHeaders() });
+
     const data = await resp.json();
+
     const list = document.getElementById('logList');
+
     if (!data.logs || data.logs.length === 0) {
+
       list.innerHTML = '<p style="color:#999;padding:20px;">暂无日志</p>';
+
     } else {
+
       list.innerHTML = data.logs.map(log => {
+
         const cls = log.success ? 'success' : 'fail';
-        return \`<div class="log-entry">
-          <span class="time">\${formatFullDate(log.time)}</span>
-          [\${log.task}] 渠道:\${log.channel} <span class="\${cls}">\${log.success ? '✅ 成功' : '❌ 失败'}</span>
-          \${log.error ? '<span style="color:#e74c3c;font-size:12px;">错误: '+log.error+'</span>' : ''}
-        </div>\`;
+
+        return `<div class="log-entry">
+          <span class="time">${formatFullDate(log.time)}</span>
+          [${log.task}] 渠道:${log.channel} <span class="${cls}">${log.success ? '✅ 成功' : '❌ 失败'}</span>
+          ${log.error ? '<span style="color:#e74c3c;font-size:12px;">错误: '+log.error+'</span>' : ''}
+        </div>`;
+
       }).join('');
+
     }
+
     openModal('logModal');
+
   }
 
   async function clearLogs() {
+
     if (!confirm('确认清空所有日志？')) return;
+
     const resp = await fetch('/api/logs', { method: 'DELETE', headers: getHeaders() });
+
     if (resp.ok) {
+
       showToast('日志已清空');
+
       closeModal('logModal');
+
     } else {
+
       showToast('清空失败', 'error');
+
     }
+
   }
 
   // 新建/编辑
   function openAddModal() {
+
     document.getElementById('taskModalTitle').textContent='新建任务';
+
     document.getElementById('editId').value='';
+
     document.getElementById('taskName').value='';
+
     document.getElementById('taskMode').value='periodic';
+
     document.getElementById('startDate').value=new Date().toISOString().split('T')[0];
+
     document.getElementById('periodValue').value='1';
+    
     document.getElementById('periodUnit').value='month';
     document.getElementById('countdownDays').value='30';
     document.getElementById('remindTime').value='08:00';
@@ -709,8 +1124,8 @@ function getDashboardPage() {
     if(!name){ showToast('请输入名称','error'); return; }
     if(reminderGroups.length===0){ showToast('请至少添加一组提前提醒','error'); return; }
     const parts = remindTime.split(':');
-    if (parseInt(parts[1]) % checkInterval !== 0) {
-      showToast('提醒分钟必须是 ' + checkInterval + ' 的倍数', 'error');
+    if (parseInt(parts[1]) % 5 !== 0) {
+      showToast('提醒分钟必须是 5 的倍数', 'error');
       return;
     }
     let body = { name, mode, remindTime, remark, reminderDays: reminderGroups.map(g=>g.value), reminderUnits: reminderGroups.map(g=>g.unit) };
@@ -777,7 +1192,6 @@ function getDashboardPage() {
     const data = await resp.json();
     document.getElementById('cfgUsername').value = data.username||'';
     document.getElementById('cfgPassword').value = data.password||'';
-    document.getElementById('cfgInterval').value = data.checkInterval || 5;
     document.getElementById('cfgLogging').checked = data.enableLogging !== false;
     const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]');
     const selected = data.notifierTypes || [];
@@ -802,7 +1216,7 @@ function getDashboardPage() {
         html += '<div class="config-detail"><strong>' + type + '</strong>';
         fields.forEach(f => {
           const val = data[f.key] || '';
-          html += \`<label>\${f.label}</label><input type="text" id="cfg_\${f.key}" value="\${val}">\`;
+          html += `<label>${f.label}</label><input type="text" id="cfg_${f.key}" value="${val}">`;
         });
         html += '</div>';
       }
@@ -827,7 +1241,7 @@ function getDashboardPage() {
     const config = {
       username: document.getElementById('cfgUsername').value.trim(),
       password: document.getElementById('cfgPassword').value.trim(),
-      checkInterval: parseInt(document.getElementById('cfgInterval').value) || 5,
+      checkInterval: 5,
       enableLogging: document.getElementById('cfgLogging').checked,
     };
     const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked');
@@ -838,14 +1252,11 @@ function getDashboardPage() {
     });
     if(!config.username||!config.password){ showToast('用户名密码不能空','error'); return; }
     if(config.notifierTypes.length===0){ showToast('请至少选择一个推送渠道','error'); return; }
-    if(config.checkInterval < 1 || config.checkInterval > 60) { showToast('检测间隔必须在1-60之间','error'); return; }
     const resp = await fetch('/api/config', { method: 'POST', headers: getHeaders(), body: JSON.stringify(config) });
     const data = await resp.json();
-    if(data.success){ 
-      closeModal('configModal'); 
-      showToast('配置保存成功'); 
-      checkInterval = config.checkInterval; 
-      updateNextCheckDisplay();
+    if(data.success){
+      closeModal('configModal');
+      showToast('配置保存成功');
       loadTasks();
     }
     else showToast(data.message||'保存失败','error');
@@ -862,13 +1273,16 @@ function getDashboardPage() {
       updateNextCheckDisplay();
     }, 60000);
   })();
+
 </script>
+
 </body></html>`;
 }
 
 // ============================================================
 // Cloudflare Worker 入口
 // ============================================================
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -931,16 +1345,15 @@ export default {
       const tasks = await getAllTasks(kv);
       return new Response(JSON.stringify({ success: true, tasks }), { headers: corsHeaders });
     }
-
     if (path === '/api/tasks' && method === 'POST') {
       const body = await request.json();
       const { name, mode, startDate, periodValue, periodUnit, countdownDays, remindTime, reminderDays, reminderUnits, remark } = body;
       if (!name) return errorResponse('缺少任务名称', 400);
       if (!reminderDays || reminderDays.length === 0) return errorResponse('至少需要一组提前提醒', 400);
-      const interval = config.checkInterval || 5;
+      const interval = 5;
       const parts = (remindTime || '08:00').split(':');
       if (parseInt(parts[1]) % interval !== 0) {
-        return errorResponse('提醒分钟必须是 ' + interval + ' 的倍数', 400);
+        return errorResponse('提醒分钟必须是 5 的倍数', 400);
       }
       let task = {
         id: crypto.randomUUID(),
@@ -969,7 +1382,6 @@ export default {
       await kv.put('history_' + task.id, JSON.stringify([]));
       return new Response(JSON.stringify({ success: true, task }), { headers: corsHeaders });
     }
-
     if (path.startsWith('/api/tasks/') && method === 'PUT') {
       const id = path.split('/')[3];
       const existingRaw = await kv.get('task_' + id);
@@ -982,10 +1394,10 @@ export default {
       task.remark = body.remark || '';
       task.reminderDays = (body.reminderDays || []).map(Number);
       task.reminderUnits = body.reminderUnits || [];
-      const interval = config.checkInterval || 5;
+      const interval = 5;
       const parts = task.remindTime.split(':');
       if (parseInt(parts[1]) % interval !== 0) {
-        return errorResponse('提醒分钟必须是 ' + interval + ' 的倍数', 400);
+        return errorResponse('提醒分钟必须是 5 的倍数', 400);
       }
       if (task.mode === 'periodic') {
         task.startDate = body.startDate || task.startDate;
@@ -1001,7 +1413,6 @@ export default {
       await kv.put('task_' + id, JSON.stringify(task));
       return new Response(JSON.stringify({ success: true, task }), { headers: corsHeaders });
     }
-
     if (path.startsWith('/api/tasks/') && method === 'DELETE') {
       const id = path.split('/')[3];
       await kv.delete('task_' + id);
@@ -1049,7 +1460,6 @@ export default {
       const title = `🧪 测试推送：${task.name}`;
       const content = `这是任务 "${task.name}" 的测试消息。\n📅 提醒日：${task.nextReminder} ${task.remindTime||'08:00'}\n📝 备注：${task.remark || '无'}`;
       const result = await sendNotificationWithRetry(config, title, content, task);
-      // 记录日志（测试也记录）
       if (config.enableLogging !== false) {
         await appendLog(kv, { time: new Date().toISOString(), task: task.name, channel: 'test', success: result.success, error: result.error });
       }
@@ -1065,7 +1475,6 @@ export default {
       const cfg = await getConfig(env);
       return new Response(JSON.stringify(cfg), { headers: corsHeaders });
     }
-
     if (path === '/api/config' && method === 'POST') {
       const body = await request.json();
       const existing = await getConfig(env);
@@ -1074,11 +1483,8 @@ export default {
       } else {
         delete body.notifierTypes;
       }
-      if (body.checkInterval) {
-        body.checkInterval = parseInt(body.checkInterval) || 5;
-        if (body.checkInterval < 1) body.checkInterval = 1;
-        if (body.checkInterval > 60) body.checkInterval = 60;
-      }
+      // 强制覆盖为固定5分钟，无视前端传入
+      body.checkInterval = 5;
       body.enableLogging = body.enableLogging === true || body.enableLogging === 'true';
       const newConfig = { ...existing, ...body };
       await kv.put('config', JSON.stringify(newConfig));
@@ -1088,65 +1494,73 @@ export default {
     return new Response('Not Found', { status: 404 });
   },
 
-  // 定时任务（每分钟触发，但只在间隔倍数时执行）
+  // 定时任务
   async scheduled(event, env, ctx) {
-    const kv = env.TASKS_KV;
-    const config = await getConfig(env);
-    const interval = config.checkInterval || 5;
-    const now = new Date();
-    const minute = now.getMinutes();
-    if (minute % interval !== 0) return;
+    ctx.waitUntil((async () => {
+      const kv = env.TASKS_KV;
+      const config = await getConfig(env);
+      const interval = 5;
+      const now = new Date();
+      const beijingNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
+      const currentMinute = beijingNow.getMinutes();
+      if (currentMinute % interval !== 0) return;
 
-    const tasks = await getAllTasks(kv);
-    const beijingNow = new Date(now.getTime() + 8*60*60*1000);
+      const tasks = await getAllTasks(kv);
+      for (const task of tasks) {
+        try {
+          const remindTimeStr = task.remindTime || '08:00';
+          const remindDateTime = new Date(`${task.nextReminder}T${remindTimeStr}:00+08:00`);
+          const remindBeijing = new Date(remindDateTime.toLocaleString("en-US", { timeZone: "Asia/Shanghai" }));
+          const diffMs = remindBeijing - beijingNow;
+          let diffHours = diffMs / (1000 * 60 * 60);
 
-    for (const task of tasks) {
-      const remindDateTime = new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00');
-      let diffHours = (remindDateTime - beijingNow) / (1000 * 60 * 60);
-      // 兜底调整
-      const reminderMinute = remindDateTime.getMinutes();
-      const adjustedMinute = Math.floor(reminderMinute / interval) * interval;
-      if (adjustedMinute !== reminderMinute) {
-        const adjustedRemind = new Date(remindDateTime);
-        adjustedRemind.setMinutes(adjustedMinute, 0, 0);
-        diffHours = (adjustedRemind - beijingNow) / (1000 * 60 * 60);
-      }
+          const reminderDays = task.reminderDays || [];
+          const reminderUnits = task.reminderUnits || [];
+          let sent = false;
 
-      const reminderDays = task.reminderDays || [];
-      const reminderUnits = task.reminderUnits || [];
-      let sent = false;
-      for (let i = 0; i < reminderDays.length; i++) {
-        const val = reminderDays[i];
-        const unit = (reminderUnits[i] || 'day');
-        let threshold = val;
-        if (unit === 'day') threshold *= 24;
-        if (Math.abs(diffHours - threshold) < 0.5) {
-          const title = `⏰ 任务提醒：${task.name}`;
-          const content = `📋 "${task.name}" 提醒日即将到来！\n📅 日期：${task.nextReminder} ${task.remindTime||'08:00'}\n📝 备注：${task.remark || '无'}`;
-          const result = await sendNotificationWithRetry(config, title, content, task);
-          if (config.enableLogging !== false) {
-            await appendLog(kv, { time: new Date().toISOString(), task: task.name, channel: 'scheduled', success: result.success, error: result.error });
+          for (let i = 0; i < reminderDays.length; i++) {
+            const val = reminderDays[i];
+            const unit = reminderUnits[i] || 'day';
+            let threshold = val;
+            if (unit === 'day') threshold *= 24;
+            if (Math.abs(diffHours - threshold) < 0.17) {
+              const title = `⏰ 任务提醒：${task.name}`;
+              const content = `📋 "${task.name}" 提醒日即将到来！\n📅 日期：${task.nextReminder} ${remindTimeStr}\n📝 备注：${task.remark || '无'}`;
+              const result = await sendNotificationWithRetry(config, title, content, task);
+              if (config.enableLogging !== false) {
+                await appendLog(kv, { time: new Date().toISOString(), task: task.name, channel: 'scheduled', success: result.success, error: result.error });
+              }
+              sent = true;
+              break;
+            }
           }
-          sent = true;
-          break;
-        }
-      }
 
-      if (!sent && diffHours < -1) {
-        const title = `⚠️ 任务过期：${task.name}`;
-        const content = `📋 "${task.name}" 已过期！\n📅 提醒日：${task.nextReminder} ${task.remindTime||'08:00'}\n请及时续订。`;
-        const result = await sendNotificationWithRetry(config, title, content, task);
-        if (config.enableLogging !== false) {
-          await appendLog(kv, { time: new Date().toISOString(), task: task.name, channel: 'scheduled', success: result.success, error: result.error });
+          if (!sent && diffHours < -1) {
+            const title = `⚠️ 任务过期：${task.name}`;
+            const content = `📋 "${task.name}" 已过期！\n📅 提醒日：${task.nextReminder} ${remindTimeStr}\n请及时续订。`;
+            const result = await sendNotificationWithRetry(config, title, content, task);
+            if (config.enableLogging !== false) {
+              await appendLog(kv, { time: new Date().toISOString(), task: task.name, channel: 'scheduled', success: result.success, error: result.error });
+            }
+          }
+        } catch (e) {
+          await appendLog(kv, {
+            time: new Date().toISOString(),
+            task: task.name,
+            channel: 'scheduled',
+            success: false,
+            error: '执行失败：' + e.message
+          });
         }
       }
-    }
+    })());
   }
 };
 
 // ============================================================
 // 辅助函数
 // ============================================================
+
 function errorResponse(msg, code) {
   return new Response(JSON.stringify({ success: false, message: msg }), { status: code, headers: { 'Content-Type': 'application/json' } });
 }
@@ -1193,22 +1607,27 @@ async function appendLog(kv, entry) {
 
 async function generateJWT(payload, secret) {
   const encoder = new TextEncoder();
-  const data = encoder.encode(JSON.stringify({ ...payload, exp: Date.now() + 86400000 }));
+  const header = { alg: "HS256", typ: "JWT" };
+  const encodedHeader = btoa(JSON.stringify(header));
+  const encodedPayload = btoa(JSON.stringify({ ...payload, exp: Math.floor(Date.now() / 1000) + 86400 }));
+  const data = encoder.encode(encodedHeader + "." + encodedPayload);
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const sig = await crypto.subtle.sign('HMAC', key, data);
-  return btoa(String.fromCharCode(...new Uint8Array(data))) + '.' + btoa(String.fromCharCode(...new Uint8Array(sig)));
+  const encodedSig = btoa(String.fromCharCode(...new Uint8Array(sig)));
+  return encodedHeader + "." + encodedPayload + "." + encodedSig;
 }
 
 async function verifyJWT(token, secret) {
   const parts = token.split('.');
-  if (parts.length !== 2) throw new Error('Invalid');
-  const data = Uint8Array.from(atob(parts[0]), c => c.charCodeAt(0));
-  const sig = Uint8Array.from(atob(parts[1]), c => c.charCodeAt(0));
+  if (parts.length !== 3) throw new Error('Invalid');
+  const dataStr = parts[0] + "." + parts[1];
+  const data = Uint8Array.from(atob(dataStr), c => c.charCodeAt(0));
+  const sig = Uint8Array.from(atob(parts[2]), c => c.charCodeAt(0));
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
   if (!await crypto.subtle.verify('HMAC', key, sig, data)) throw new Error('Invalid sig');
-  const payload = JSON.parse(new TextDecoder().decode(data));
-  if (payload.exp < Date.now()) throw new Error('Expired');
+  const payload = JSON.parse(atob(parts[1]));
+  if (payload.exp < Date.now() / 1000) throw new Error('Expired');
   return payload;
 }
 
@@ -1224,7 +1643,6 @@ async function sendNotification(config, title, content, task) {
   if (enabledTypes.length === 0) {
     return { success: false, error: '未启用任何推送渠道' };
   }
-
   const results = [];
   for (const type of enabledTypes) {
     let result = { type, success: false, error: '' };
@@ -1239,7 +1657,6 @@ async function sendNotification(config, title, content, task) {
           result.success = sc.ok;
           if (!result.success) result.error = 'HTTP ' + sc.status;
           break;
-
         case 'pushplus':
           if (!config.pushplusToken) { result.error = '未配置 Token'; break; }
           const pp = await fetch('https://www.pushplus.plus/send', {
@@ -1250,7 +1667,6 @@ async function sendNotification(config, title, content, task) {
           result.success = (ppd.code === 200);
           if (!result.success) result.error = ppd.msg || '发送失败';
           break;
-
         case 'telegram':
           if (!config.tgBotToken || !config.tgChatId) { result.error = '未配置 Telegram'; break; }
           const tg = await fetch(`https://api.telegram.org/bot${config.tgBotToken}/sendMessage`, {
@@ -1261,7 +1677,6 @@ async function sendNotification(config, title, content, task) {
           result.success = tgd.ok;
           if (!result.success) result.error = tgd.description || '发送失败';
           break;
-
         case 'email':
           if (!config.emailFrom || !config.emailTo || !config.emailApiKey) { result.error = '邮件配置不完整'; break; }
           const em = await fetch('https://api.resend.com/emails', {
@@ -1271,7 +1686,6 @@ async function sendNotification(config, title, content, task) {
           result.success = em.ok;
           if (!result.success) result.error = 'HTTP ' + em.status;
           break;
-
         case 'notifyx':
           if (!config.notifyxApiKey) { result.error = '未配置 NotifyX API Key'; break; }
           try {
@@ -1295,7 +1709,6 @@ async function sendNotification(config, title, content, task) {
             result.error = e.message;
           }
           break;
-
         default:
           result.error = '未知渠道';
       }
@@ -1303,9 +1716,7 @@ async function sendNotification(config, title, content, task) {
       result.error = e.message;
     }
     results.push(result);
-    console.log(`[通知] ${type}: ${result.success ? '✅' : '❌ ' + result.error}`);
   }
-
   const anySuccess = results.some(r => r.success);
   const errors = results.filter(r => !r.success).map(r => r.type + ': ' + r.error).join('; ');
   return { success: anySuccess, error: errors || '全部失败' };
