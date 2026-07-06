@@ -1,8 +1,8 @@
 name: Deploy Worker
-
 on:
   push:
     branches: [ main ]
+  workflow_dispatch: # 支持手动一键部署
 
 jobs:
   deploy:
@@ -11,25 +11,18 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 安装 Node.js
+      - name: 安装 Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: 安装依赖
+      - name: 安装项目依赖
         run: npm install
 
-      - name: 替换 KV ID 占位符
-        run: |
-          echo "替换前:"
-          cat wrangler.toml
-          sed -i "s/YOUR_KV_ID/${{ secrets.KV_NAMESPACE_ID }}/g" wrangler.toml
-          echo "替换后:"
-          cat wrangler.toml
-
-      - name: 部署到 Cloudflare
+      - name: 部署 Cloudflare Worker
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+          # 运行时动态注入KV，不修改源码文件
+          command: deploy --kv TASKS_KV=${{ secrets.KV_NAMESPACE_ID }}
