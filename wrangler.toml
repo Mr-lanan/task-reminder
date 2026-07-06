@@ -4,7 +4,7 @@ compatibility_date = "2024-12-18"
 
 [[kv_namespaces]]
 binding = "TASKS_KV"
-id = "5dcf82801fa14f73b71f76742a678490"   # 这会直接当作字面量字符串，无效   # 占位符，部署时被替换
+id = "YOUR_KV_ID"   # 这会直接当作字面量字符串，无效   # 占位符，部署时被替换
 
 [triggers]
 crons = ["0 * * * *"]
