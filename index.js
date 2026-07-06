@@ -73,7 +73,7 @@ function getLoginPage() {
 }
 
 // ============================================================
-// HTML 主面板（含仪表盘、历史紫色、配置青色、分钟验证）
+// HTML 主面板
 // ============================================================
 function getDashboardPage() {
   return `<!DOCTYPE html>
@@ -280,6 +280,22 @@ function getDashboardPage() {
   function formatFullDate(d) { if(!d)return'-'; const dt=new Date(d); return dt.toLocaleString('zh-CN'); }
   function addDays(dateStr, days) { const d=new Date(dateStr); d.setDate(d.getDate()+days); return d.toISOString().split('T')[0]; }
 
+  // ===== 计算下次检查时间 =====
+  function getNextCheckTime() {
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const remainder = minutes % checkInterval;
+    let nextMinutes = minutes + (checkInterval - remainder);
+    if (remainder === 0) nextMinutes = minutes + checkInterval; // 确保是未来时间
+    const next = new Date(now);
+    next.setMinutes(nextMinutes, 0, 0);
+    return next.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function updateNextCheckDisplay() {
+    document.getElementById('statNextCheck').textContent = getNextCheckTime();
+  }
+
   // ===== 获取检测间隔 =====
   async function fetchInterval() {
     try {
@@ -287,6 +303,7 @@ function getDashboardPage() {
       const data = await resp.json();
       if (data.checkInterval) checkInterval = parseInt(data.checkInterval) || 5;
     } catch(e) { checkInterval = 5; }
+    updateNextCheckDisplay();
   }
 
   // ===== 验证时间分钟是否合规 =====
@@ -475,6 +492,7 @@ function getDashboardPage() {
         }).join('');
       }
       updateDashboard(tasks);
+      updateNextCheckDisplay();
     } catch(e) { showToast('加载失败','error'); }
   }
 
@@ -492,9 +510,6 @@ function getDashboardPage() {
     document.getElementById('statExpired').textContent = expired;
     document.getElementById('statSoon').textContent = soon;
     document.getElementById('statActive').textContent = active;
-    const nextHour = new Date(now);
-    nextHour.setHours(now.getHours()+1, 0, 0, 0);
-    document.getElementById('statNextCheck').textContent = nextHour.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
   }
 
   // ===== 新建/编辑 =====
@@ -690,7 +705,14 @@ function getDashboardPage() {
     if(config.checkInterval < 1 || config.checkInterval > 60) { showToast('检测间隔必须在1-60之间','error'); return; }
     const resp = await fetch('/api/config', { method: 'POST', headers: getHeaders(), body: JSON.stringify(config) });
     const data = await resp.json();
-    if(data.success){ closeModal('configModal'); showToast('配置保存成功'); checkInterval = config.checkInterval; }
+    if(data.success){ 
+      closeModal('configModal'); 
+      showToast('配置保存成功'); 
+      checkInterval = config.checkInterval; 
+      updateNextCheckDisplay();
+      // 重新加载任务以更新仪表盘
+      loadTasks();
+    }
     else showToast(data.message||'保存失败','error');
   }
 
@@ -702,10 +724,7 @@ function getDashboardPage() {
     loadTasks();
     // 每分钟更新下次检查时间
     setInterval(() => {
-      const now = new Date();
-      const nextHour = new Date(now);
-      nextHour.setHours(now.getHours()+1, 0, 0, 0);
-      document.getElementById('statNextCheck').textContent = nextHour.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+      updateNextCheckDisplay();
     }, 60000);
   })();
 </script>
@@ -903,7 +922,6 @@ export default {
       } else {
         delete body.notifierTypes;
       }
-      // 保存间隔
       if (body.checkInterval) {
         body.checkInterval = parseInt(body.checkInterval) || 5;
         if (body.checkInterval < 1) body.checkInterval = 1;
