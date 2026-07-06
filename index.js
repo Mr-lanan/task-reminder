@@ -577,7 +577,7 @@ function getDashboardPage() {
     const springY = info[0];
     const springM = info[1];
     const springD = info[2];
-    const springDate = new Date(`${springY}-${String(springM).padStart(2,'0')}-${String(springD).padStart(2,'0')}T00:00:00+08:00`);
+    const springDate = new Date(springY + "-" + String(springM).padStart(2,'0') + "-" + String(springD).padStart(2,'0') + "T00:00:00+08:00");
     const months = info[4];
     const leapM = info[5];
     const leapD = info[6];
