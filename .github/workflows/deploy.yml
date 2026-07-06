@@ -3,11 +3,15 @@ name: Deploy Worker
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 支持手动一键运行部署
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # 全局注入 Cloudflare 鉴权变量，wrangler 才能识别
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - name: 拉取仓库代码
         uses: actions/checkout@v4
@@ -20,6 +24,3 @@ jobs:
 
       - name: 部署 Cloudflare Worker
         run: npx wrangler deploy
-        env:
-          WRANGLER_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WRANGLER_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
