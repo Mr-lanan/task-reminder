@@ -1,0 +1,35 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 替换 KV ID 占位符
+        run: |
+          echo "替换前:"
+          cat wrangler.toml
+          sed -i "s/YOUR_KV_ID/${{ secrets.KV_NAMESPACE_ID }}/g" wrangler.toml
+          echo "替换后:"
+          cat wrangler.toml
+
+      - name: 部署到 Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
