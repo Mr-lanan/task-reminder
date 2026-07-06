@@ -13,7 +13,6 @@ async function getConfig(env) {
   config.password = env.DEFAULT_PASSWORD || config.password || 'admin123';
   config.jwtSecret = env.JWT_SECRET || config.jwtSecret || 'change-this-secret';
 
-  // 规范化 notifierTypes 为数组
   if (typeof config.notifierTypes === 'string') {
     config.notifierTypes = config.notifierTypes.split(',').map(s => s.trim()).filter(Boolean);
   } else if (!Array.isArray(config.notifierTypes)) {
@@ -73,7 +72,7 @@ function getLoginPage() {
 }
 
 // ============================================================
-// HTML 主面板（含多选推送、动态提醒天数、任务测试）
+// HTML 主面板
 // ============================================================
 function getDashboardPage() {
   return `<!DOCTYPE html>
@@ -145,11 +144,9 @@ function getDashboardPage() {
     <select id="periodUnit"><option value="day">日</option><option value="week">周</option><option value="month" selected>月</option><option value="year">年</option></select>
     <label>周期数值 *</label><input type="number" id="periodValue" value="1" min="1">
     <label>开始日期 *</label><input type="date" id="startDate">
-    
     <label>提前提醒天数（点击 ➕ 添加多组）</label>
-    <div id="reminderDaysContainer"><!-- 动态添加 --></div>
+    <div id="reminderDaysContainer"></div>
     <button class="btn-primary btn-sm" onclick="addReminderGroup()">➕ 添加一组</button>
-    
     <label>备注</label><textarea id="remark" rows="2"></textarea>
     <div class="form-actions">
       <button class="btn-outline" onclick="closeModal('taskModal')">取消</button>
@@ -167,7 +164,7 @@ function getDashboardPage() {
   </div>
 </div>
 
-<!-- 配置弹窗（多选推送） -->
+<!-- 配置弹窗 -->
 <div class="modal" id="configModal">
   <div class="modal-content">
     <h2>⚙️ 系统配置</h2>
@@ -198,7 +195,8 @@ function getDashboardPage() {
   let reminderGroupCounter = 0;
 
   function getHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
-  function showToast(msg, type = 'success') {
+  function showToast(msg, type) {
+    type = type || 'success';
     const t = document.getElementById('toast');
     t.textContent = msg; t.className = 'toast ' + type + ' show';
     clearTimeout(t._timer); t._timer = setTimeout(() => t.classList.remove('show'), 3000);
@@ -208,7 +206,6 @@ function getDashboardPage() {
   function formatDate(d) { if(!d)return'-'; const dt=new Date(d); return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
   function formatFullDate(d) { if(!d)return'-'; const dt=new Date(d); return dt.toLocaleString('zh-CN'); }
 
-  // ===== 动态提醒天数组 =====
   function addReminderGroup(value) {
     const container = document.getElementById('reminderDaysContainer');
     const div = document.createElement('div');
@@ -234,7 +231,7 @@ function getDashboardPage() {
     container.innerHTML = '';
     reminderGroupCounter = 0;
     if (!values || values.length === 0) {
-      addReminderGroup(3); // 默认一组
+      addReminderGroup(3);
     } else {
       values.forEach(v => addReminderGroup(v));
     }
@@ -250,13 +247,11 @@ function getDashboardPage() {
     return values;
   }
 
-  // ===== 登录检查 =====
   async function checkAuth() {
     if(!token){ window.location.href='/login'; return false; }
     try { const resp = await fetch('/api/tasks', { headers: getHeaders() }); if(resp.status===401){ localStorage.removeItem('token'); window.location.href='/login'; return false; } return true; } catch(e){ return false; }
   }
 
-  // ===== 加载任务列表 =====
   async function loadTasks() {
     if(!await checkAuth()) return;
     try {
@@ -289,7 +284,6 @@ function getDashboardPage() {
     } catch(e) { showToast('加载失败','error'); }
   }
 
-  // ===== 新建任务 =====
   function openAddModal() {
     document.getElementById('taskModalTitle').textContent='新建任务';
     document.getElementById('editId').value='';
@@ -298,7 +292,7 @@ function getDashboardPage() {
     document.getElementById('periodValue').value='1';
     document.getElementById('startDate').value=new Date().toISOString().split('T')[0];
     document.getElementById('remark').value='';
-    loadReminderGroups([3]); // 默认提前3天
+    loadReminderGroups([3]);
     openModal('taskModal');
   }
 
@@ -339,7 +333,6 @@ function getDashboardPage() {
     else showToast(data.message||'保存失败','error');
   }
 
-  // ===== 续订 =====
   async function renewTask(id) {
     if(!confirm('确认续订？开始日将重置为今天。')) return;
     const resp = await fetch('/api/tasks/'+id+'/renew', { method: 'POST', headers: getHeaders() });
@@ -348,7 +341,6 @@ function getDashboardPage() {
     else showToast(data.message||'续订失败','error');
   }
 
-  // ===== 删除 =====
   async function deleteTask(id) {
     if(!confirm('确认删除？')) return;
     const resp = await fetch('/api/tasks/'+id, { method: 'DELETE', headers: getHeaders() });
@@ -357,7 +349,6 @@ function getDashboardPage() {
     else showToast(data.message||'删除失败','error');
   }
 
-  // ===== 历史 =====
   async function viewHistory(id) {
     const resp = await fetch('/api/tasks/'+id+'/history', { headers: getHeaders() });
     const data = await resp.json();
@@ -367,7 +358,6 @@ function getDashboardPage() {
     openModal('historyModal');
   }
 
-  // ===== 测试单个任务 =====
   async function testTask(id) {
     try {
       const resp = await fetch('/api/tasks/'+id+'/test', { method: 'POST', headers: getHeaders() });
@@ -377,19 +367,16 @@ function getDashboardPage() {
     } catch(e) { showToast('请求失败','error'); }
   }
 
-  // ===== 配置（多选推送） =====
   async function openConfigModal() {
     const resp = await fetch('/api/config', { headers: getHeaders() });
     const data = await resp.json();
     document.getElementById('cfgUsername').value = data.username||'';
     document.getElementById('cfgPassword').value = data.password||'';
-    // 设置勾选框
     const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]');
     const selected = data.notifierTypes || [];
     checkboxes.forEach(cb => {
       cb.checked = selected.includes(cb.value);
     });
-    // 渲染详细配置字段
     renderNotifierFields(selected, data);
     openModal('configModal');
   }
@@ -404,7 +391,6 @@ function getDashboardPage() {
       notifyx: [{ key:'notifyxApiKey', label:'API Key' }]
     };
     let html = '';
-    // 只显示选中的渠道
     selectedTypes.forEach(type => {
       const fields = allFields[type] || [];
       if (fields.length) {
@@ -419,12 +405,10 @@ function getDashboardPage() {
     container.innerHTML = html;
   }
 
-  // 监听复选框变化，动态渲染详细字段
   document.addEventListener('change', function(e) {
     if (e.target.closest && e.target.closest('#notifierCheckboxes')) {
       const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked');
       const selected = Array.from(checkboxes).map(cb => cb.value);
-      // 重新读取已有数据
       const data = {};
       document.querySelectorAll('#notifierConfigFields input').forEach(el => {
         const key = el.id.replace('cfg_', '');
@@ -441,7 +425,6 @@ function getDashboardPage() {
     };
     const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked');
     config.notifierTypes = Array.from(checkboxes).map(cb => cb.value);
-    // 收集所有配置字段
     document.querySelectorAll('#notifierConfigFields input').forEach(el => {
       const key = el.id.replace('cfg_', '');
       config[key] = el.value.trim();
@@ -455,8 +438,7 @@ function getDashboardPage() {
   }
 
   function logout() { localStorage.removeItem('token'); window.location.href='/login'; }
-  
-  // 初始化时加载任务
+
   loadTasks();
 </script>
 </body></html>`;
@@ -475,7 +457,6 @@ export default {
       return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' } });
     }
 
-    // 页面
     if (path === '/login') return new Response(getLoginPage(), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
     if (path === '/' || path === '') return new Response(getDashboardPage(), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
 
@@ -483,7 +464,6 @@ export default {
     const config = await getConfig(env);
     const kv = env.TASKS_KV;
 
-    // 登录（公开）
     if (path === '/api/login' && method === 'POST') {
       const body = await request.json();
       if (body.username === config.username && body.password === config.password) {
@@ -493,7 +473,6 @@ export default {
       return new Response(JSON.stringify({ success: false, message: '用户名或密码错误' }), { status: 401, headers: corsHeaders });
     }
 
-    // JWT 验证
     const auth = request.headers.get('Authorization');
     let user = null;
     if (auth && auth.startsWith('Bearer ')) {
@@ -503,7 +482,7 @@ export default {
       return new Response(JSON.stringify({ success: false, message: '未授权' }), { status: 401, headers: corsHeaders });
     }
 
-    // ---------- 任务 CRUD ----------
+    // 任务 CRUD
     if (path === '/api/tasks' && method === 'GET') {
       const tasks = await getAllTasks(kv);
       return new Response(JSON.stringify({ success: true, tasks }), { headers: corsHeaders });
@@ -565,7 +544,6 @@ export default {
       task.startDate = today;
       task.nextReminder = calcNextReminder(today, task.periodValue, task.periodUnit);
       await kv.put('task_' + id, JSON.stringify(task));
-      
       const historyRaw = await kv.get('history_' + id);
       let history = historyRaw ? JSON.parse(historyRaw) : [];
       history.push({ renewedAt: new Date().toISOString(), nextReminder: task.nextReminder });
@@ -582,7 +560,7 @@ export default {
       return new Response(JSON.stringify({ success: true, history }), { headers: corsHeaders });
     }
 
-    // 测试单个任务推送
+    // 测试单个任务
     if (path.startsWith('/api/tasks/') && path.endsWith('/test') && method === 'POST') {
       const id = path.split('/')[3];
       const existing = await kv.get('task_' + id);
@@ -598,7 +576,7 @@ export default {
       }
     }
 
-    // 配置（读写）
+    // 配置
     if (path === '/api/config' && method === 'GET') {
       const cfg = await getConfig(env);
       return new Response(JSON.stringify(cfg), { headers: corsHeaders });
@@ -607,7 +585,6 @@ export default {
     if (path === '/api/config' && method === 'POST') {
       const body = await request.json();
       const existing = await getConfig(env);
-      // 确保 notifierTypes 是数组
       if (Array.isArray(body.notifierTypes)) {
         body.notifierTypes = body.notifierTypes.filter(Boolean);
       } else {
@@ -621,7 +598,7 @@ export default {
     return new Response('Not Found', { status: 404 });
   },
 
-  // ---------- 定时任务（每小时） ----------
+  // 定时任务
   async scheduled(event, env, ctx) {
     const kv = env.TASKS_KV;
     const config = await getConfig(env);
@@ -683,7 +660,6 @@ function calcNextReminder(startDate, periodValue, periodUnit) {
   return d.toISOString().split('T')[0];
 }
 
-// JWT
 async function generateJWT(payload, secret) {
   const encoder = new TextEncoder();
   const data = encoder.encode(JSON.stringify({ ...payload, exp: Date.now() + 86400000 }));
@@ -706,7 +682,7 @@ async function verifyJWT(token, secret) {
 }
 
 // ============================================================
-// 推送通知（支持多渠道并发发送）
+// 推送通知（完整正确版）
 // ============================================================
 async function sendNotification(config, title, content, task) {
   const enabledTypes = config.notifierTypes || [];
@@ -722,7 +698,8 @@ async function sendNotification(config, title, content, task) {
         case 'serverchan':
           if (!config.serverchanKey) { result.error = '未配置 SendKey'; break; }
           const sc = await fetch(`https://sctapi.ftqq.com/${config.serverchanKey}.send`, {
-            method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({ title, desp: content })
           });
           result.success = sc.ok;
@@ -732,7 +709,8 @@ async function sendNotification(config, title, content, task) {
         case 'pushplus':
           if (!config.pushplusToken) { result.error = '未配置 Token'; break; }
           const pp = await fetch('https://www.pushplus.plus/send', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: config.pushplusToken, title, content })
           });
           const ppd = await pp.json();
@@ -743,7 +721,8 @@ async function sendNotification(config, title, content, task) {
         case 'telegram':
           if (!config.tgBotToken || !config.tgChatId) { result.error = '未配置 Telegram'; break; }
           const tg = await fetch(`https://api.telegram.org/bot${config.tgBotToken}/sendMessage`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ chat_id: config.tgChatId, text: `*${title}*\n${content}`, parse_mode: 'Markdown' })
           });
           const tgd = await tg.json();
@@ -754,7 +733,8 @@ async function sendNotification(config, title, content, task) {
         case 'email':
           if (!config.emailFrom || !config.emailTo || !config.emailApiKey) { result.error = '邮件配置不完整'; break; }
           const em = await fetch('https://api.resend.com/emails', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.emailApiKey },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.emailApiKey },
             body: JSON.stringify({ from: config.emailFrom, to: [config.emailTo], subject: title, html: `<h2>${title}</h2><p>${content.replace(/\n/g,'<br>')}</p>` })
           });
           result.success = em.ok;
@@ -765,45 +745,26 @@ async function sendNotification(config, title, content, task) {
           if (!config.notifyxApiKey) { result.error = '未配置 NotifyX API Key'; break; }
           try {
             const url = `https://www.notifyx.cn/api/v1/send/${config.notifyxApiKey}`;
-            const payload = { title: title, content: content };
             const response = await fetch(url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload)
+              body: JSON.stringify({ title: title, content: content })
             });
             if (!response.ok) {
               const text = await response.text();
               result.error = `HTTP ${response.status}: ${text.substring(0, 100)}`;
               break;
             }
-    const data = await response.json();
-    if (data.status === 'queued' || data.id) {
-      result.success = true;
-    } else {
-      result.error = data.message || '发送失败';
-    }
-  } catch (e) {
-    result.error = e.message;
-  }
-  break;
+            const data = await response.json();
+            if (data.status === 'queued' || data.id) {
+              result.success = true;
+            } else {
+              result.error = data.message || '发送失败';
             }
-    // 根据官方文档，成功时返回 { status: 'queued' }，但不确定是否有 code，简单判断 status 存在即可
-    if (nxd.status === 'queued' || nxd.id) {
-      result.success = true;
-    } else {
-      result.error = nxd.message || '发送失败';
-    }
-  } catch (e) {
-    result.error = e.message;
-  }
-  break;
-            }
-    result.success = (nxd.code === 200);
-    if (!result.success) result.error = nxd.msg || '发送失败';
-  } catch (e) {
-    result.error = e.message;
-  }
-  break;
+          } catch (e) {
+            result.error = e.message;
+          }
+          break;
 
         default:
           result.error = '未知渠道';
@@ -815,7 +776,6 @@ async function sendNotification(config, title, content, task) {
     console.log(`[通知] ${type}: ${result.success ? '✅' : '❌ ' + result.error}`);
   }
 
-  // 只要有一个成功就算整体成功
   const anySuccess = results.some(r => r.success);
   const errors = results.filter(r => !r.success).map(r => r.type + ': ' + r.error).join('; ');
   return { success: anySuccess, error: errors || '全部失败' };
