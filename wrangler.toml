@@ -3,8 +3,7 @@ main = "src/index.js"
 compatibility_date = "2024-12-18"
 
 [[kv_namespaces]]
-binding = "TASKS_KV"
-id = "你的KV命名空间ID"   # 在Cloudflare Dashboard创建后替换
+binding = "TASKS_KV"   # 只写名称，不写 id
 
 [triggers]
 crons = ["0 * * * *"]
