@@ -23,4 +23,14 @@ jobs:
         run: bun install
 
       - name: 部署 Cloudflare Worker
-        run: npx wrangler deploy
+        run: |
+          set +e
+          npx wrangler deploy
+          status=$?
+          if [ $status -ne 0 ] && [ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "首次部署失败，重试时移除 CLOUDFLARE_ACCOUNT_ID（可能与 token 账号不匹配）..."
+            unset CLOUDFLARE_ACCOUNT_ID
+            npx wrangler deploy
+            status=$?
+          fi
+          exit $status
