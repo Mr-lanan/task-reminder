@@ -1,0 +1,14 @@
+{
+  "name": "task-reminder",
+  "version": "1.0.0",
+  "description": "周期性任务提醒系统，部署于 Cloudflare Workers",
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
