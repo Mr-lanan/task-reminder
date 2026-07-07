@@ -366,7 +366,7 @@ function getDashboardPage() {
           </select>
         </div>
         <div><label>农历日</label>
-          <select id="lunarDay">
+          <select id="lunarDay" onchange="updateLunarNext()">
             <!-- JS 动态生成 1-30 -->
           </select>
         </div>
@@ -934,10 +934,10 @@ async function editTask(id) {
   } else if (t.mode === 'countdown') {
     document.getElementById('countdownDays').value=t.countdownDays || 30;
   } else if (t.mode === 'lunar') {
+    populateLunarDays();
     document.getElementById('lunarMonth').value = t.lunarMonth || 1;
     document.getElementById('lunarDay').value = t.lunarDay || 1;
     document.getElementById('lunarLeap').checked = t.lunarLeap || false;
-    populateLunarDays();
     updateLunarNext();
   }
   document.getElementById('remark').value=t.remark||'';
@@ -997,13 +997,24 @@ async function saveTask() {
     const lunarMonth = parseInt(document.getElementById('lunarMonth').value);
     const lunarDay = parseInt(document.getElementById('lunarDay').value);
     const lunarLeap = document.getElementById('lunarLeap').checked;
+
     body.lunarMonth = lunarMonth;
     body.lunarDay = lunarDay;
     body.lunarLeap = lunarLeap;
+
     const now = new Date();
     const next = LunarCalendar.nextLunarDate(lunarMonth, lunarDay, lunarLeap, now);
-    if (!next) { showToast('无法计算农历日期，请检查', 'error'); return; }
-    body.nextReminder = next.year + '-' + String(next.month).padStart(2,'0') + '-' + String(next.day).padStart(2,'0');
+
+    if (!next) {
+      showToast('无法计算农历日期，请检查', 'error');
+      return;
+    }
+
+    body.nextReminder =
+      next.year + '-' +
+      String(next.month).padStart(2, '0') + '-' +
+      String(next.day).padStart(2, '0');
+
     body.startDate = body.nextReminder;
   }
 
