@@ -31,7 +31,7 @@ const LunarCalendar = {
   getLunarMonthDays(year, month, isLeap) {
     if (isLeap) {
       const leapMonth = this.getLeapMonth(year);
-      if (!leapMonth) return 0;
+      if (leapMonth !== month) return 0;
       return (lunarInfo[year - 1900] & 0x10000) ? 30 : 29;
     }
     return (lunarInfo[year - 1900] & (0x10000 >> month)) ? 30 : 29;
@@ -52,9 +52,11 @@ const LunarCalendar = {
   },
   solarToLunar(year, month, day) {
     if (year < 1900 || year > 2100) return null;
-    const baseDate = new Date(1900, 0, 31);
-    const targetDate = new Date(year, month - 1, day);
-    let offset = Math.floor((targetDate - baseDate) / 86400000) + 1;
+
+    const baseTime = Date.UTC(1900, 0, 31);
+    const targetTime = Date.UTC(year, month - 1, day);
+
+    let offset = Math.floor((targetTime - baseTime) / 86400000) + 1;
     if (offset < 0) return null;
 
     let lunarYear = 1900;
@@ -72,12 +74,16 @@ const LunarCalendar = {
 
     for (let i = 1; i <= 12; i++) {
       const monthDays = this.getLunarMonthDays(lunarYear, i, false);
+
       if (offset >= monthDays) {
         offset -= monthDays;
+
         if (leapMonth === i) {
           const leapDays = this.getLeapDays(lunarYear);
+
           if (offset >= leapDays) {
             offset -= leapDays;
+
             if (i === 12) break;
           } else {
             isLeapMonth = true;
@@ -95,8 +101,10 @@ const LunarCalendar = {
 
     if (lunarMonth === 12 && offset >= this.getLunarMonthDays(lunarYear, 12, false)) {
       offset -= this.getLunarMonthDays(lunarYear, 12, false);
+
       if (leapMonth === 12) {
         const leapDays = this.getLeapDays(lunarYear);
+
         if (offset < leapDays) {
           isLeapMonth = true;
           lunarMonth = 12;
@@ -141,20 +149,18 @@ const LunarCalendar = {
 
     const leapMonth = this.getLeapMonth(year);
 
-    // 如果勾选闰月，但这一年没有对应闰月，直接判定无效。
     if (isLeap && leapMonth !== month) return null;
 
     const monthDays = this.getLunarMonthDays(year, month, !!isLeap);
     if (monthDays <= 0 || day < 1 || day > monthDays) return null;
 
-    const baseDate = new Date(1900, 0, 31);
+    const baseTime = Date.UTC(1900, 0, 31);
     let offset = 0;
 
     for (let y = 1900; y < year; y++) {
       offset += this.getLunarYearDays(y);
     }
 
-    // 如果目标月份在闰月之后，必须把这一年的闰月天数也加进去。
     for (let m = 1; m < month; m++) {
       offset += this.getLunarMonthDays(year, m, false);
 
@@ -163,31 +169,35 @@ const LunarCalendar = {
       }
     }
 
-    // 如果目标本身就是闰月，应先走完同名的普通月。
     if (isLeap && leapMonth === month) {
       offset += this.getLunarMonthDays(year, month, false);
     }
 
     offset += day - 1;
 
-    const resultDate = new Date(baseDate.getTime() + (offset - 1) * 86400000);
+    const resultDate = new Date(baseTime + (offset - 1) * 86400000);
 
     return {
-      year: resultDate.getFullYear(),
-      month: resultDate.getMonth() + 1,
-      day: resultDate.getDate()
+      year: resultDate.getUTCFullYear(),
+      month: resultDate.getUTCMonth() + 1,
+      day: resultDate.getUTCDate()
     };
   },
   nextLunarDate(lunarMonth, lunarDay, isLeapMonth, fromDate) {
     const from = new Date(fromDate);
-    from.setHours(0, 0, 0, 0);
+    const fromTime = Date.UTC(
+      from.getUTCFullYear(),
+      from.getUTCMonth(),
+      from.getUTCDate()
+    );
 
-    for (let year = from.getFullYear(); year <= 2100; year++) {
+    for (let year = from.getUTCFullYear(); year <= 2100; year++) {
       const solar = this.lunarToSolar(year, lunarMonth, lunarDay, isLeapMonth);
       if (!solar) continue;
 
-      const solarDate = new Date(solar.year, solar.month - 1, solar.day);
-      if (solarDate >= from) {
+      const solarTime = Date.UTC(solar.year, solar.month - 1, solar.day);
+
+      if (solarTime >= fromTime) {
         return {
           year: solar.year,
           month: solar.month,
@@ -576,7 +586,7 @@ const LunarCalendar = {
   getLunarMonthDays(year, month, isLeap) {
     if (isLeap) {
       const leapMonth = this.getLeapMonth(year);
-      if (!leapMonth) return 0;
+      if (leapMonth !== month) return 0;
       return (lunarInfo[year - 1900] & 0x10000) ? 30 : 29;
     }
     return (lunarInfo[year - 1900] & (0x10000 >> month)) ? 30 : 29;
@@ -595,28 +605,38 @@ const LunarCalendar = {
   },
   solarToLunar(year, month, day) {
     if (year < 1900 || year > 2100) return null;
-    const baseDate = new Date(1900, 0, 31);
-    const targetDate = new Date(year, month - 1, day);
-    let offset = Math.floor((targetDate - baseDate) / 86400000) + 1;
+
+    const baseTime = Date.UTC(1900, 0, 31);
+    const targetTime = Date.UTC(year, month - 1, day);
+
+    let offset = Math.floor((targetTime - baseTime) / 86400000) + 1;
     if (offset < 0) return null;
+
     let lunarYear = 1900;
     let daysInLunarYear = this.getLunarYearDays(lunarYear);
+
     while (offset >= daysInLunarYear) {
       offset -= daysInLunarYear;
       lunarYear++;
       daysInLunarYear = this.getLunarYearDays(lunarYear);
     }
+
     let lunarMonth = 1;
     let isLeapMonth = false;
     const leapMonth = this.getLeapMonth(lunarYear);
+
     for (let i = 1; i <= 12; i++) {
       const monthDays = this.getLunarMonthDays(lunarYear, i, false);
+
       if (offset >= monthDays) {
         offset -= monthDays;
+
         if (leapMonth === i) {
           const leapDays = this.getLeapDays(lunarYear);
+
           if (offset >= leapDays) {
             offset -= leapDays;
+
             if (i === 12) break;
           } else {
             isLeapMonth = true;
@@ -631,10 +651,13 @@ const LunarCalendar = {
         break;
       }
     }
+
     if (lunarMonth === 12 && offset >= this.getLunarMonthDays(lunarYear, 12, false)) {
       offset -= this.getLunarMonthDays(lunarYear, 12, false);
+
       if (leapMonth === 12) {
         const leapDays = this.getLeapDays(lunarYear);
+
         if (offset < leapDays) {
           isLeapMonth = true;
           lunarMonth = 12;
@@ -648,8 +671,9 @@ const LunarCalendar = {
         lunarMonth = 1;
       }
     }
+
     const lunarDay = offset + 1;
-    const yearOffset = lunarYear - 1900;
+
     return {
       lunarYear,
       lunarMonth,
@@ -682,7 +706,7 @@ const LunarCalendar = {
     const monthDays = this.getLunarMonthDays(year, month, !!isLeap);
     if (monthDays <= 0 || day < 1 || day > monthDays) return null;
 
-    const baseDate = new Date(1900, 0, 31);
+    const baseTime = Date.UTC(1900, 0, 31);
     let offset = 0;
 
     for (let y = 1900; y < year; y++) {
@@ -703,24 +727,37 @@ const LunarCalendar = {
 
     offset += day - 1;
 
-    const resultDate = new Date(baseDate.getTime() + (offset - 1) * 86400000);
+    const resultDate = new Date(baseTime + (offset - 1) * 86400000);
 
     return {
-      year: resultDate.getFullYear(),
-      month: resultDate.getMonth() + 1,
-      day: resultDate.getDate()
+      year: resultDate.getUTCFullYear(),
+      month: resultDate.getUTCMonth() + 1,
+      day: resultDate.getUTCDate()
     };
   },
   nextLunarDate(lunarMonth, lunarDay, isLeapMonth, fromDate) {
     const from = new Date(fromDate);
-    from.setHours(0, 0, 0, 0);
+    const fromTime = Date.UTC(
+      from.getUTCFullYear(),
+      from.getUTCMonth(),
+      from.getUTCDate()
+    );
 
-    for (let year = from.getFullYear(); year <= 2100; year++) {
+    for (let year = from.getUTCFullYear(); year <= 2100; year++) {
       const solar = this.lunarToSolar(year, lunarMonth, lunarDay, isLeapMonth);
       if (!solar) continue;
-      const solarDate = new Date(solar.year, solar.month - 1, solar.day);
-      if (solarDate >= from) return { year: solar.year, month: solar.month, day: solar.day };
+
+      const solarTime = Date.UTC(solar.year, solar.month - 1, solar.day);
+
+      if (solarTime >= fromTime) {
+        return {
+          year: solar.year,
+          month: solar.month,
+          day: solar.day
+        };
+      }
     }
+
     return null;
   }
 };
@@ -761,10 +798,11 @@ function openModal(id) {
 function formatDate(d) {
   if (!d) return '-';
 
+  const value = String(d);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
   const dt = new Date(d);
-  return dt.getFullYear() + '-' +
-    String(dt.getMonth() + 1).padStart(2, '0') + '-' +
-    String(dt.getDate()).padStart(2, '0');
+  return formatDateBeijing(dt);
 }
 
 function formatFullDate(d) {
@@ -774,10 +812,23 @@ function formatFullDate(d) {
   return dt.toLocaleString('zh-CN');
 }
 
+function parseDateLocalFrontend(dateStr) {
+  const parts = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+}
+
+function formatDateBeijing(d) {
+  const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+
+  return bj.getUTCFullYear() + '-' +
+    String(bj.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(bj.getUTCDate()).padStart(2, '0');
+}
+
 function addDays(dateStr, days) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  const d = parseDateLocalFrontend(dateStr);
+  d.setUTCDate(d.getUTCDate() + days);
+  return formatDateObjLocal(d);
 }
 
 // ===== 农历显示 =====
@@ -953,9 +1004,9 @@ function populateLunarDays(selectedDay) {
 }
 
 function formatDateObjLocal(d) {
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
+  return d.getUTCFullYear() + '-' +
+    String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getUTCDate()).padStart(2, '0');
 }
 
 function formatSolarObj(solar) {
@@ -1002,12 +1053,12 @@ function calcLunarPeriodicNextDate(lunarYear, lunarMonth, lunarDay, lunarLeap, p
     const startSolar = LunarCalendar.lunarToSolar(lunarYear, lunarMonth, lunarDay, lunarLeap);
     if (!startSolar) return null;
 
-    const d = new Date(startSolar.year, startSolar.month - 1, startSolar.day);
+    const d = new Date(Date.UTC(startSolar.year, startSolar.month - 1, startSolar.day));
 
     if (periodUnit === 'day') {
-      d.setDate(d.getDate() + periodValue);
+      d.setUTCDate(d.getUTCDate() + periodValue);
     } else {
-      d.setDate(d.getDate() + periodValue * 7);
+      d.setUTCDate(d.getUTCDate() + periodValue * 7);
     }
 
     return formatDateObjLocal(d);
@@ -1106,32 +1157,32 @@ function updateNextDateFromStart() {
     const unit = document.getElementById('periodUnit').value;
 
     if (start && val > 0) {
-      const d = new Date(start);
+      const d = parseDateLocalFrontend(start);
 
       switch (unit) {
         case 'day':
-          d.setDate(d.getDate() + val);
+          d.setUTCDate(d.getUTCDate() + val);
           break;
         case 'week':
-          d.setDate(d.getDate() + val * 7);
+          d.setUTCDate(d.getUTCDate() + val * 7);
           break;
         case 'month':
-          d.setMonth(d.getMonth() + val);
+          d.setUTCMonth(d.getUTCMonth() + val);
           break;
         case 'year':
-          d.setFullYear(d.getFullYear() + val);
+          d.setUTCFullYear(d.getUTCFullYear() + val);
           break;
       }
 
-      nextDate = d.toISOString().split('T')[0];
+      nextDate = formatDateObjLocal(d);
     }
   } else {
     const days = parseInt(document.getElementById('countdownDays').value);
 
     if (days > 0) {
-      const today = new Date();
-      today.setDate(today.getDate() + days);
-      nextDate = today.toISOString().split('T')[0];
+      const today = parseDateLocalFrontend(formatDateBeijing(new Date()));
+      today.setUTCDate(today.getUTCDate() + days);
+      nextDate = formatDateObjLocal(today);
     }
   }
 
@@ -1171,30 +1222,30 @@ function reverseCalculate() {
       return;
     }
 
-    const d = new Date(reminderDate);
+    const d = parseDateLocalFrontend(reminderDate);
 
     switch (unit) {
       case 'day':
-        d.setDate(d.getDate() - val);
+        d.setUTCDate(d.getUTCDate() - val);
         break;
       case 'week':
-        d.setDate(d.getDate() - val * 7);
+        d.setUTCDate(d.getUTCDate() - val * 7);
         break;
       case 'month':
-        d.setMonth(d.getMonth() - val);
+        d.setUTCMonth(d.getUTCMonth() - val);
         break;
       case 'year':
-        d.setFullYear(d.getFullYear() - val);
+        d.setUTCFullYear(d.getUTCFullYear() - val);
         break;
     }
 
-    const start = d.toISOString().split('T')[0];
+    const start = formatDateObjLocal(d);
     document.getElementById('startDate').value = start;
     showToast('已反算开始日期：' + start);
   } else {
-    const today = new Date();
-    const remind = new Date(reminderDate);
-    const diffTime = remind - today;
+    const today = parseDateLocalFrontend(formatDateBeijing(new Date()));
+    const remind = parseDateLocalFrontend(reminderDate);
+    const diffTime = remind.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
     if (diffDays < 1) {
@@ -1393,10 +1444,12 @@ function openAddModal() {
 
   populateLunarYears();
   populateLunarDays();
+
   document.getElementById('lunarMonth').value = '1';
   document.getElementById('lunarDay').value = '1';
   document.getElementById('lunarLeap').checked = false;
-  document.getElementById('startDate').value = formatDateObjLocal(new Date());
+
+  document.getElementById('startDate').value = formatDateBeijing(new Date());
   document.getElementById('periodValue').value = '1';
   document.getElementById('periodUnit').value = 'month';
   document.getElementById('countdownDays').value = '30';
@@ -1409,7 +1462,6 @@ function openAddModal() {
   validateTime();
   openModal('taskModal');
 }
-
 async function editTask(id) {
   const resp = await fetch('/api/tasks', { headers: getHeaders() });
   const data = await resp.json();
@@ -1435,15 +1487,15 @@ async function editTask(id) {
   if (t.mode === 'countdown') {
     document.getElementById('countdownDays').value = t.countdownDays || 30;
   } else {
-    document.getElementById('startDate').value = t.startDate || new Date().toISOString().split('T')[0];
+    document.getElementById('startDate').value = t.startDate || formatDateBeijing(new Date());
     document.getElementById('periodValue').value = t.periodValue || 1;
     document.getElementById('periodUnit').value = t.periodUnit || (isLunarPeriodic ? 'year' : 'month');
 
     if (isLunarPeriodic) {
-      populateLunarYears(t.lunarYear || new Date(t.nextReminder || new Date()).getFullYear());
+      populateLunarYears(t.lunarYear || parseInt((t.nextReminder || formatDateBeijing(new Date())).split('-')[0]));
       populateLunarDays(t.lunarDay || 1);
 
-      document.getElementById('lunarYear').value = t.lunarYear || new Date(t.nextReminder || new Date()).getFullYear();
+      document.getElementById('lunarYear').value = t.lunarYear || parseInt((t.nextReminder || formatDateBeijing(new Date())).split('-')[0]);
       document.getElementById('lunarMonth').value = t.lunarMonth || 1;
       document.getElementById('lunarDay').value = t.lunarDay || 1;
       document.getElementById('lunarLeap').checked = t.lunarLeap || false;
@@ -1562,24 +1614,24 @@ async function saveTask() {
 
       body.startDate = startDate;
 
-      const d = new Date(startDate);
+      const d = parseDateLocalFrontend(startDate);
 
       switch (periodUnit) {
         case 'day':
-          d.setDate(d.getDate() + periodValue);
+          d.setUTCDate(d.getUTCDate() + periodValue);
           break;
         case 'week':
-          d.setDate(d.getDate() + periodValue * 7);
+          d.setUTCDate(d.getUTCDate() + periodValue * 7);
           break;
         case 'month':
-          d.setMonth(d.getMonth() + periodValue);
+          d.setUTCMonth(d.getUTCMonth() + periodValue);
           break;
         case 'year':
-          d.setFullYear(d.getFullYear() + periodValue);
+          d.setUTCFullYear(d.getUTCFullYear() + periodValue);
           break;
       }
 
-      body.nextReminder = d.toISOString().split('T')[0];
+      body.nextReminder = formatDateObjLocal(d);
       body.lunarMonth = null;
       body.lunarDay = null;
       body.lunarLeap = false;
@@ -1595,7 +1647,7 @@ async function saveTask() {
     body.countdownDays = days;
     body.calendarType = 'solar';
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatDateBeijing(new Date());
     body.nextReminder = addDays(today, days);
   }
 
@@ -1930,14 +1982,22 @@ async function verifyToken(token, secret) {
 // 日期工具
 // ============================================================
 function formatDateLocal(d) {
-  return d.getFullYear() + '-' +
-    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-    String(d.getDate()).padStart(2, '0');
+  return d.getUTCFullYear() + '-' +
+    String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getUTCDate()).padStart(2, '0');
 }
 
 function parseDateLocal(dateStr) {
   const parts = dateStr.split('-').map(Number);
-  return new Date(parts[0], parts[1] - 1, parts[2]);
+  return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+}
+
+function formatDateBeijingForWorker(d) {
+  const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+
+  return bj.getUTCFullYear() + '-' +
+    String(bj.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(bj.getUTCDate()).padStart(2, '0');
 }
 
 function makeRemindDateTime(task) {
@@ -1996,12 +2056,12 @@ function calcLunarPeriodicNextDateForWorker(lunarYear, lunarMonth, lunarDay, lun
     const startSolar = LunarCalendar.lunarToSolar(lunarYear, lunarMonth, lunarDay, lunarLeap);
     if (!startSolar) return null;
 
-    const d = new Date(startSolar.year, startSolar.month - 1, startSolar.day);
+    const d = new Date(Date.UTC(startSolar.year, startSolar.month - 1, startSolar.day));
 
     if (periodUnit === 'day') {
-      d.setDate(d.getDate() + periodValue);
+      d.setUTCDate(d.getUTCDate() + periodValue);
     } else {
-      d.setDate(d.getDate() + periodValue * 7);
+      d.setUTCDate(d.getUTCDate() + periodValue * 7);
     }
 
     return formatDateLocal(d);
@@ -2077,16 +2137,16 @@ function calcNextFromReminderDate(task) {
 
     switch (unit) {
       case 'day':
-        d.setDate(d.getDate() + val);
+        d.setUTCDate(d.getUTCDate() + val);
         break;
       case 'week':
-        d.setDate(d.getDate() + val * 7);
+        d.setUTCDate(d.getUTCDate() + val * 7);
         break;
       case 'month':
-        d.setMonth(d.getMonth() + val);
+        d.setUTCMonth(d.getUTCMonth() + val);
         break;
       case 'year':
-        d.setFullYear(d.getFullYear() + val);
+        d.setUTCFullYear(d.getUTCFullYear() + val);
         break;
     }
 
@@ -2095,7 +2155,7 @@ function calcNextFromReminderDate(task) {
 
   if (task.mode === 'countdown') {
     const d = parseDateLocal(task.nextReminder);
-    d.setDate(d.getDate() + (parseInt(task.countdownDays) || 1));
+    d.setUTCDate(d.getUTCDate() + (parseInt(task.countdownDays) || 1));
     return formatDateLocal(d);
   }
 
@@ -2537,12 +2597,12 @@ export default {
       if (!existing) return errorResponse('任务不存在', 404);
 
       const task = JSON.parse(existing);
-      const today = new Date().toISOString().split('T')[0];
+      const today = formatDateBeijingForWorker(new Date());
       let newNext;
       const isLunarPeriodic = task.calendarType === 'lunar' || task.mode === 'lunar';
 
       if (isLunarPeriodic) {
-        const from = new Date(today + 'T00:00:00+08:00');
+        const from = parseDateLocal(today);
 
         const next = LunarCalendar.nextLunarDate(
           task.lunarMonth,
@@ -2562,24 +2622,24 @@ export default {
         task.periodValue = task.periodValue || 1;
         task.periodUnit = task.periodUnit || 'year';
       } else if (task.mode === 'periodic') {
-        const d = new Date(today);
+        const d = parseDateLocal(today);
 
         switch (task.periodUnit) {
           case 'day':
-            d.setDate(d.getDate() + task.periodValue);
+            d.setUTCDate(d.getUTCDate() + task.periodValue);
             break;
           case 'week':
-            d.setDate(d.getDate() + task.periodValue * 7);
+            d.setUTCDate(d.getUTCDate() + task.periodValue * 7);
             break;
           case 'month':
-            d.setMonth(d.getMonth() + task.periodValue);
+            d.setUTCMonth(d.getUTCMonth() + task.periodValue);
             break;
           case 'year':
-            d.setFullYear(d.getFullYear() + task.periodValue);
+            d.setUTCFullYear(d.getUTCFullYear() + task.periodValue);
             break;
         }
 
-        newNext = d.toISOString().split('T')[0];
+        newNext = formatDateLocal(d);
       } else if (task.mode === 'countdown') {
         newNext = addDays(today, task.countdownDays);
       } else {
@@ -2975,9 +3035,9 @@ async function getAllTasks(kv) {
 }
 
 function addDays(dateStr, days) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  const d = parseDateLocal(dateStr);
+  d.setUTCDate(d.getUTCDate() + days);
+  return formatDateLocal(d);
 }
 
 function escapeHtml(str) {
