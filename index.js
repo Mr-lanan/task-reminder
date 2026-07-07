@@ -1135,7 +1135,13 @@ export default {
     const method = request.method;
 
     if (method === 'OPTIONS') {
-      return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Authorization' } });
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        }
+      });
     }
 
     if (path === '/login') return new Response(getLoginPage(), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
