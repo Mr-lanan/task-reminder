@@ -1,4 +1,3 @@
-
 // ============================================================
 // 农历库（纯本地，1900-2100）内联到 index.js
 // ============================================================
@@ -127,7 +126,80 @@ const LunarCalendar = {
     const totalDays = this.getLunarYearDays(lunarYear);
     const yearOffset = lunarYear - 1900;
     const ganIndex = (yearOffset + 9) % 10;
-    const zhiIndex = (y
+    const zhiIndex = (yearOffset + 1) % 12;
+    const animalIndex = (yearOffset + 1) % 12;
+
+    return {
+      lunarYear,
+      lunarMonth,
+      lunarDay,
+      isLeapMonth,
+      monthName: this.monthNames[lunarMonth - 1] + (isLeapMonth ? '闰' : ''),
+      dayName: this.getDayName(lunarDay),
+      ganZhi: this.tianGan[ganIndex] + this.diZhi[zhiIndex],
+      animal: this.shengXiao[animalIndex],
+      totalDays
+    };
+  },
+
+  getDayName(day) {
+    if (day === 10) return '初十';
+    if (day === 20) return '二十';
+    if (day === 30) return '三十';
+    const numNames = ['','一','二','三','四','五','六','七','八','九','十'];
+    if (day < 10) return '初' + numNames[day];
+    if (day < 20) return '十' + numNames[day - 10];
+    if (day < 30) return '廿' + numNames[day - 20];
+    return '三十';
+  },
+
+  lunarToSolar(year, month, day, isLeap) {
+    if (year < 1900 || year > 2100) return null;
+    const baseDate = new Date(1900, 0, 31);
+    let offset = 0;
+    for (let y = 1900; y < year; y++) {
+      offset += this.getLunarYearDays(y);
+    }
+    for (let m = 1; m < month; m++) {
+      offset += this.getLunarMonthDays(year, m, false);
+    }
+    if (isLeap && this.getLeapMonth(year) === month) {
+      offset += this.getLeapDays(year);
+    }
+    offset += day - 1;
+    const resultDate = new Date(baseDate.getTime() + offset * 86400000);
+    return {
+      year: resultDate.getFullYear(),
+      month: resultDate.getMonth() + 1,
+      day: resultDate.getDate()
+    };
+  },
+
+  nextLunarDate(lunarMonth, lunarDay, isLeapMonth, fromDate) {
+    const from = new Date(fromDate);
+    const fromYear = from.getFullYear();
+    for (let year = fromYear; year <= 2100; year++) {
+      const solar = this.lunarToSolar(year, lunarMonth, lunarDay, isLeapMonth);
+      if (!solar) continue;
+      const solarDate = new Date(solar.year, solar.month - 1, solar.day);
+      if (solarDate >= from) {
+        return { year: solar.year, month: solar.month, day: solar.day };
+      }
+    }
+    return null;
+  }
+};
+
+// 将 LunarCalendar 暴露到全局作用域，供前端 HTML 调用
+if (typeof window !== 'undefined') {
+  window.LunarCalendar = LunarCalendar;
+}
+
+// ============================================================
+// 后续的 Worker 代码（配置读取、HTML 页面、API 路由等）
+// ============================================================
+// ...（此处接你原来的完整代码，从 getConfig 开始，到最后的 export default）
+// 由于篇幅原因，我在此省略，但实际使用时请将你之前的完整 Worker 代码接在下面。
 // ============================================================
 // 配置读取（优先环境变量 -> KV存储 -> 默认值）
 // ============================================================
