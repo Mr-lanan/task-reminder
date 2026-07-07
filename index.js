@@ -129,6 +129,8 @@ const LunarCalendar = {
   },
   lunarToSolar(year, month, day, isLeap) {
     if (year < 1900 || year > 2100) return null;
+    if (isLeap && this.getLeapMonth(year) !== month) return null;
+
     const baseDate = new Date(1900, 0, 31);
     let offset = 0;
     for (let y = 1900; y < year; y++) offset += this.getLunarYearDays(y);
@@ -567,6 +569,8 @@ const LunarCalendar = {
   },
   lunarToSolar(year, month, day, isLeap) {
     if (year < 1900 || year > 2100) return null;
+    if (isLeap && this.getLeapMonth(year) !== month) return null;
+    
     const baseDate = new Date(1900, 0, 31);
     let offset = 0;
     for (let y = 1900; y < year; y++) offset += this.getLunarYearDays(y);
