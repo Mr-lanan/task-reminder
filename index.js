@@ -142,6 +142,8 @@ const LunarCalendar = {
   },
   nextLunarDate(lunarMonth, lunarDay, isLeapMonth, fromDate) {
     const from = new Date(fromDate);
+    from.setHours(0, 0, 0, 0);
+    
     for (let year = from.getFullYear(); year <= 2100; year++) {
       const solar = this.lunarToSolar(year, lunarMonth, lunarDay, isLeapMonth);
       if (!solar) continue;
@@ -582,6 +584,8 @@ const LunarCalendar = {
   },
   nextLunarDate(lunarMonth, lunarDay, isLeapMonth, fromDate) {
     const from = new Date(fromDate);
+    from.setHours(0, 0, 0, 0);
+
     for (let year = from.getFullYear(); year <= 2100; year++) {
       const solar = this.lunarToSolar(year, lunarMonth, lunarDay, isLeapMonth);
       if (!solar) continue;
