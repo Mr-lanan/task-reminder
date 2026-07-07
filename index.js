@@ -1,5 +1,5 @@
 // ============================================================
-// 农历库（纯本地，1900-2100）内联到 index.js
+// 农历库（纯本地，1900-2100） - 此部分将被复制到前端HTML中
 // ============================================================
 const lunarInfo = [
   0x04bd8, 0x04ae0, 0x0a570, 0x054d5, 0x0d260, 0x0d950, 0x16554, 0x056a0, 0x09ad0, 0x055d2,
@@ -190,18 +190,8 @@ const LunarCalendar = {
   }
 };
 
-// 将 LunarCalendar 暴露到全局作用域，供前端 HTML 调用
-if (typeof window !== 'undefined') {
-  window.LunarCalendar = LunarCalendar;
-}
-
 // ============================================================
-// 后续的 Worker 代码（配置读取、HTML 页面、API 路由等）
-// ============================================================
-// ...（此处接你原来的完整代码，从 getConfig 开始，到最后的 export default）
-// 由于篇幅原因，我在此省略，但实际使用时请将你之前的完整 Worker 代码接在下面。
-// ============================================================
-// 配置读取（优先环境变量 -> KV存储 -> 默认值）
+// 配置读取
 // ============================================================
 async function getConfig(env) {
   const kv = env.TASKS_KV;
@@ -273,9 +263,8 @@ function getLoginPage() {
 </script>
 </body></html>`;
 }
-
 // ============================================================
-// HTML 主面板（含仪表盘、农历显示、紫色历史按钮等）
+// HTML 主面板（含完整内联农历库、仪表盘、所有功能）
 // ============================================================
 function getDashboardPage() {
   return `<!DOCTYPE html>
@@ -490,7 +479,158 @@ function getDashboardPage() {
 
 <script>
 // ============================================================
-// 前端 JavaScript（包含农历调用、仪表盘、任务管理等）
+// 前端内联农历库（完全复制自 Worker 端的定义）
+// ============================================================
+const lunarInfo = [0x04bd8,0x04ae0,0x0a570,0x054d5,0x0d260,0x0d950,0x16554,0x056a0,0x09ad0,0x055d2,
+0x04ae0,0x0a5b6,0x0a4d0,0x0d250,0x1d255,0x0b540,0x0d6a0,0x0ada2,0x095b0,0x14977,
+0x04970,0x0a4b0,0x0b4b5,0x06a50,0x06d40,0x1ab54,0x02b60,0x09570,0x052f2,0x04970,
+0x06566,0x0d4a0,0x0ea50,0x16e95,0x05ad0,0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,
+0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,
+0x06ca0,0x0b550,0x15355,0x04da0,0x0a5b0,0x14573,0x052b0,0x0a9a8,0x0e950,0x06aa0,
+0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,0x05260,0x0f263,0x0d950,0x05b57,0x056a0,
+0x096d0,0x04ddb,0x04ad0,0x0a4d0,0x0d4d4,0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,
+0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,
+0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,0x06b58,0x05ac0,0x0ab60,0x096d5,0x092e0,
+0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,
+0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,
+0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,
+0x05aa0,0x076a3,0x096d0,0x04afb,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,
+0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,
+0x14b63,0x09370,0x049f8,0x04970,0x064b0,0x168a6,0x0ea50,0x06b20,0x1a6c4,0x0aae0,
+0x092e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,
+0x052d0,0x0a9b8,0x0aa50,0x0b5a0,0x0b6a6,0x04ad0,0x0a5b0,0x0a5a4,0x0a930,0x07952,
+0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,0x05aa0,
+0x076a3,0x096d0,0x04afb,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,0x0b5a0,
+0x056d0];
+
+const LunarCalendar = {
+  tianGan: ['甲','乙','丙','丁','戊','己','庚','辛','壬','癸'],
+  diZhi: ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥'],
+  shengXiao: ['鼠','牛','虎','兔','龙','蛇','马','羊','猴','鸡','狗','猪'],
+  monthNames: ['正','二','三','四','五','六','七','八','九','十','冬','腊'],
+  getLunarMonthDays(year, month, isLeap) {
+    if (isLeap) {
+      const leapMonth = this.getLeapMonth(year);
+      if (!leapMonth) return 0;
+      return (lunarInfo[year - 1900] & 0x10000) ? 30 : 29;
+    }
+    return (lunarInfo[year - 1900] & (0x10000 >> month)) ? 30 : 29;
+  },
+  getLunarYearDays(year) {
+    let sum = 348;
+    const info = lunarInfo[year - 1900];
+    for (let i = 0x8000; i > 0x8; i >>= 1) sum += (info & i) ? 1 : 0;
+    return sum + this.getLeapDays(year);
+  },
+  getLeapMonth(year) { return lunarInfo[year - 1900] >> 12; },
+  getLeapDays(year) {
+    const leapMonth = this.getLeapMonth(year);
+    if (leapMonth) return (lunarInfo[year - 1900] & 0x10000) ? 30 : 29;
+    return 0;
+  },
+  solarToLunar(year, month, day) {
+    if (year < 1900 || year > 2100) return null;
+    const baseDate = new Date(1900, 0, 31);
+    const targetDate = new Date(year, month - 1, day);
+    let offset = Math.floor((targetDate - baseDate) / 86400000);
+    if (offset < 0) return null;
+    let lunarYear = 1900;
+    let daysInLunarYear = this.getLunarYearDays(lunarYear);
+    while (offset >= daysInLunarYear) {
+      offset -= daysInLunarYear;
+      lunarYear++;
+      daysInLunarYear = this.getLunarYearDays(lunarYear);
+    }
+    let lunarMonth = 1;
+    let isLeapMonth = false;
+    const leapMonth = this.getLeapMonth(lunarYear);
+    for (let i = 1; i <= 12; i++) {
+      const monthDays = this.getLunarMonthDays(lunarYear, i, false);
+      if (offset >= monthDays) {
+        offset -= monthDays;
+        if (leapMonth === i) {
+          const leapDays = this.getLeapDays(lunarYear);
+          if (offset >= leapDays) {
+            offset -= leapDays;
+            if (i === 12) break;
+          } else {
+            isLeapMonth = true;
+            lunarMonth = i;
+            break;
+          }
+        } else if (i === 12) {
+          lunarMonth = 12;
+        }
+      } else {
+        lunarMonth = i;
+        break;
+      }
+    }
+    if (lunarMonth === 12 && offset >= this.getLunarMonthDays(lunarYear, 12, false)) {
+      offset -= this.getLunarMonthDays(lunarYear, 12, false);
+      if (leapMonth === 12) {
+        const leapDays = this.getLeapDays(lunarYear);
+        if (offset < leapDays) {
+          isLeapMonth = true;
+          lunarMonth = 12;
+        } else {
+          offset -= leapDays;
+          lunarYear++;
+          lunarMonth = 1;
+        }
+      } else {
+        lunarYear++;
+        lunarMonth = 1;
+      }
+    }
+    const lunarDay = offset + 1;
+    const yearOffset = lunarYear - 1900;
+    return {
+      lunarYear,
+      lunarMonth,
+      lunarDay,
+      isLeapMonth,
+      monthName: this.monthNames[lunarMonth - 1] + (isLeapMonth ? '闰' : ''),
+      dayName: this.getDayName(lunarDay),
+      ganZhi: this.tianGan[(yearOffset + 9) % 10] + this.diZhi[(yearOffset + 1) % 12],
+      animal: this.shengXiao[(yearOffset + 1) % 12],
+      totalDays: this.getLunarYearDays(lunarYear)
+    };
+  },
+  getDayName(day) {
+    if (day === 10) return '初十';
+    if (day === 20) return '二十';
+    if (day === 30) return '三十';
+    const numNames = ['','一','二','三','四','五','六','七','八','九','十'];
+    if (day < 10) return '初' + numNames[day];
+    if (day < 20) return '十' + numNames[day - 10];
+    if (day < 30) return '廿' + numNames[day - 20];
+    return '三十';
+  },
+  lunarToSolar(year, month, day, isLeap) {
+    if (year < 1900 || year > 2100) return null;
+    const baseDate = new Date(1900, 0, 31);
+    let offset = 0;
+    for (let y = 1900; y < year; y++) offset += this.getLunarYearDays(y);
+    for (let m = 1; m < month; m++) offset += this.getLunarMonthDays(year, m, false);
+    if (isLeap && this.getLeapMonth(year) === month) offset += this.getLeapDays(year);
+    offset += day - 1;
+    const resultDate = new Date(baseDate.getTime() + offset * 86400000);
+    return { year: resultDate.getFullYear(), month: resultDate.getMonth() + 1, day: resultDate.getDate() };
+  },
+  nextLunarDate(lunarMonth, lunarDay, isLeapMonth, fromDate) {
+    const from = new Date(fromDate);
+    for (let year = from.getFullYear(); year <= 2100; year++) {
+      const solar = this.lunarToSolar(year, lunarMonth, lunarDay, isLeapMonth);
+      if (!solar) continue;
+      const solarDate = new Date(solar.year, solar.month - 1, solar.day);
+      if (solarDate >= from) return { year: solar.year, month: solar.month, day: solar.day };
+    }
+    return null;
+  }
+};
+// ============================================================
+// 前端应用逻辑（使用上面的 LunarCalendar）
 // ============================================================
 const API_BASE = '';
 let token = localStorage.getItem('token') || '';
@@ -510,7 +650,7 @@ function formatDate(d) { if(!d)return'-'; const dt=new Date(d); return dt.getFul
 function formatFullDate(d) { if(!d)return'-'; const dt=new Date(d); return dt.toLocaleString('zh-CN'); }
 function addDays(dateStr, days) { const d=new Date(dateStr); d.setDate(d.getDate()+days); return d.toISOString().split('T')[0]; }
 
-// ===== 农历显示（使用从 lunar.js 导入的 LunarCalendar） =====
+// ===== 农历显示 =====
 function showLunar() {
   const dateInput = document.getElementById('reminderDate');
   if (!dateInput.value) {
@@ -518,20 +658,15 @@ function showLunar() {
     return;
   }
   const parts = dateInput.value.split('-');
-  const result = LunarCalendar.solarToLunar(
-    parseInt(parts[0]),
-    parseInt(parts[1]),
-    parseInt(parts[2])
-  );
+  const result = LunarCalendar.solarToLunar(parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]));
   if (result) {
-    document.getElementById('lunarDisplay').textContent =
-      \`农历：\${result.lunarYear}年 \${result.monthName}月 \${result.dayName}（\${result.ganZhi}年 \${result.animal}年）\`;
+    document.getElementById('lunarDisplay').textContent = 
+      '农历：' + result.lunarYear + '年 ' + result.monthName + '月 ' + result.dayName + '（' + result.ganZhi + '年 ' + result.animal + '年）';
   } else {
     document.getElementById('lunarDisplay').textContent = '农历：不支持';
   }
 }
 
-// ===== 计算下次检查时间 =====
 function getNextCheckTime() {
   const now = new Date();
   const minutes = now.getMinutes();
@@ -542,12 +677,10 @@ function getNextCheckTime() {
   next.setMinutes(nextMinutes, 0, 0);
   return next.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 }
-
 function updateNextCheckDisplay() {
   document.getElementById('statNextCheck').textContent = getNextCheckTime();
 }
 
-// ===== 获取检测间隔 =====
 async function fetchInterval() {
   try {
     const resp = await fetch('/api/config', { headers: getHeaders() });
@@ -557,7 +690,6 @@ async function fetchInterval() {
   updateNextCheckDisplay();
 }
 
-// ===== 验证时间分钟是否合规 =====
 function validateTime() {
   const timeInput = document.getElementById('remindTime');
   const errorEl = document.getElementById('timeError');
@@ -575,17 +707,12 @@ function validateTime() {
   }
 }
 
-// ===== 模式切换 =====
 function toggleModeFields() {
   const mode = document.getElementById('taskMode').value;
   document.getElementById('periodicFields').style.display = (mode === 'periodic') ? 'block' : 'none';
   document.getElementById('countdownFields').style.display = (mode === 'countdown') ? 'block' : 'none';
   document.getElementById('lunarFields').style.display = (mode === 'lunar') ? 'block' : 'none';
-  const hints = {
-    periodic: '周期模式：设置开始日期和周期',
-    countdown: '倒数日模式：设置间隔天数',
-    lunar: '农历周期：每年在指定农历日期提醒'
-  };
+  const hints = { periodic: '周期模式：设置开始日期和周期', countdown: '倒数日模式：设置间隔天数', lunar: '农历周期：每年在指定农历日期提醒' };
   document.getElementById('modeHint').textContent = hints[mode] || '';
   if (mode === 'lunar') {
     populateLunarDays();
@@ -613,10 +740,11 @@ function updateLunarNext() {
   const now = new Date();
   const next = LunarCalendar.nextLunarDate(month, day, isLeap, now);
   if (next) {
-    const dateStr = \`\${next.year}-\${String(next.month).padStart(2,'0')}-\${String(next.day).padStart(2,'0')}\`;
+    const dateStr = next.year + '-' + String(next.month).padStart(2,'0') + '-' + String(next.day).padStart(2,'0');
     document.getElementById('lunarNextDisplay').textContent = '📅 下次公历日期：' + dateStr;
     document.getElementById('reminderDate').value = dateStr;
     document.getElementById('nextDateDisplay').textContent = '📅 提醒日：' + dateStr;
+    showLunar();
   } else {
     document.getElementById('lunarNextDisplay').textContent = '📅 下次公历日期：--';
   }
@@ -739,13 +867,12 @@ function getReminderGroups() {
   return result;
 }
 
-// ===== 登录检查 =====
+// ===== 认证 & 任务加载 =====
 async function checkAuth() {
   if(!token){ window.location.href='/login'; return false; }
   try { const resp = await fetch('/api/tasks', { headers: getHeaders() }); if(resp.status===401){ localStorage.removeItem('token'); window.location.href='/login'; return false; } return true; } catch(e){ return false; }
 }
 
-// ===== 加载任务 =====
 async function loadTasks() {
   if(!await checkAuth()) return;
   try {
@@ -763,29 +890,25 @@ async function loadTasks() {
           const u = t.reminderUnits && t.reminderUnits[i] ? t.reminderUnits[i] : 'day';
           return g + (u === 'hour' ? '小时' : '天');
         }).join(', ') || '无';
-        // 如果是农历模式，显示农历信息
         let lunarInfoStr = '';
         if (t.mode === 'lunar' && t.lunarMonth && t.lunarDay) {
-          lunarInfoStr = \`农历 \${t.lunarMonth}月\${t.lunarDay}日\${t.lunarLeap ? '（闰月）' : ''}\`;
+          lunarInfoStr = '农历 ' + t.lunarMonth + '月' + t.lunarDay + '日' + (t.lunarLeap ? '（闰月）' : '');
         }
-        return \`
-          <div class="task-card" style="border-left-color:\${isExpired?'#e74c3c':'#2ecc71'}">
-            <div class="title">\${t.name} <span style="font-size:12px;color:#999;">[\${modeLabel}]</span></div>
-            <div class="info"><strong>周期/倒数：</strong>\${t.mode==='periodic' ? '每 '+t.periodValue+' '+unitMap[t.periodUnit] : t.mode==='countdown' ? '每 '+t.countdownDays+' 天' : lunarInfoStr}</div>
-            <div class="info"><strong>开始/基准：</strong>\${t.mode==='periodic' ? formatDate(t.startDate) : t.mode==='countdown' ? '（从今天起）' : '（农历周期）'}</div>
-            <div class="info"><strong>提醒日：</strong>\${formatDate(t.nextReminder)} \${t.remindTime||'08:00'}</div>
-            <div class="info"><strong>提前提醒：</strong>\${reminderStr}</div>
-            <div class="info"><strong>备注：</strong>\${t.remark||'-'}</div>
-            <span class="status \${isExpired?'status-expired':'status-active'}">\${isExpired?'⚠️ 已过期':'✅ 进行中'}</span>
-            <div class="actions">
-              <button class="btn-success btn-sm" onclick="renewTask('\${t.id}')">🔄 续订</button>
-              <button class="btn-primary btn-sm" onclick="editTask('\${t.id}')">✏️ 编辑</button>
-              <button class="btn-history btn-sm" onclick="viewHistory('\${t.id}')">📜 历史</button>
-              <button class="btn-warning btn-sm" onclick="testTask('\${t.id}')">📤 测试</button>
-              <button class="btn-danger btn-sm" onclick="deleteTask('\${t.id}')">🗑️ 删除</button>
-            </div>
-          </div>
-        \`;
+        return '<div class="task-card" style="border-left-color:' + (isExpired?'#e74c3c':'#2ecc71') + '">' +
+          '<div class="title">' + t.name + ' <span style="font-size:12px;color:#999;">[' + modeLabel + ']</span></div>' +
+          '<div class="info"><strong>周期/倒数：</strong>' + (t.mode==='periodic' ? '每 '+t.periodValue+' '+unitMap[t.periodUnit] : t.mode==='countdown' ? '每 '+t.countdownDays+' 天' : lunarInfoStr) + '</div>' +
+          '<div class="info"><strong>开始/基准：</strong>' + (t.mode==='periodic' ? formatDate(t.startDate) : t.mode==='countdown' ? '（从今天起）' : '（农历周期）') + '</div>' +
+          '<div class="info"><strong>提醒日：</strong>' + formatDate(t.nextReminder) + ' ' + (t.remindTime||'08:00') + '</div>' +
+          '<div class="info"><strong>提前提醒：</strong>' + reminderStr + '</div>' +
+          '<div class="info"><strong>备注：</strong>' + (t.remark||'-') + '</div>' +
+          '<span class="status ' + (isExpired?'status-expired':'status-active') + '">' + (isExpired?'⚠️ 已过期':'✅ 进行中') + '</span>' +
+          '<div class="actions">' +
+            '<button class="btn-success btn-sm" onclick="renewTask(\''+t.id+'\')">🔄 续订</button>' +
+            '<button class="btn-primary btn-sm" onclick="editTask(\''+t.id+'\')">✏️ 编辑</button>' +
+            '<button class="btn-history btn-sm" onclick="viewHistory(\''+t.id+'\')">📜 历史</button>' +
+            '<button class="btn-warning btn-sm" onclick="testTask(\''+t.id+'\')">📤 测试</button>' +
+            '<button class="btn-danger btn-sm" onclick="deleteTask(\''+t.id+'\')">🗑️ 删除</button>' +
+          '</div></div>';
       }).join('');
     }
     updateDashboard(tasks);
@@ -874,7 +997,6 @@ async function saveTask() {
   const reminderGroups = getReminderGroups();
   if(!name){ showToast('请输入名称','error'); return; }
   if(reminderGroups.length===0){ showToast('请至少添加一组提前提醒','error'); return; }
-  // 验证时间
   const parts = remindTime.split(':');
   if (parseInt(parts[1]) % checkInterval !== 0) {
     showToast('提醒分钟必须是 ' + checkInterval + ' 的倍数', 'error');
@@ -891,7 +1013,6 @@ async function saveTask() {
     body.startDate = startDate;
     body.periodValue = periodValue;
     body.periodUnit = periodUnit;
-    // 计算提醒日
     const d = new Date(startDate);
     switch(periodUnit) {
       case 'day': d.setDate(d.getDate()+periodValue); break;
@@ -913,12 +1034,11 @@ async function saveTask() {
     body.lunarMonth = lunarMonth;
     body.lunarDay = lunarDay;
     body.lunarLeap = lunarLeap;
-    // 计算下一个农历日期对应的公历日期
     const now = new Date();
     const next = LunarCalendar.nextLunarDate(lunarMonth, lunarDay, lunarLeap, now);
     if (!next) { showToast('无法计算农历日期，请检查', 'error'); return; }
-    body.nextReminder = \`\${next.year}-\${String(next.month).padStart(2,'0')}-\${String(next.day).padStart(2,'0')}\`;
-    body.startDate = body.nextReminder; // 用于历史记录
+    body.nextReminder = next.year + '-' + String(next.month).padStart(2,'0') + '-' + String(next.day).padStart(2,'0');
+    body.startDate = body.nextReminder;
   }
 
   const url = id ? '/api/tasks/'+id : '/api/tasks';
@@ -937,7 +1057,6 @@ async function renewTask(id) {
   if(data.success){ showToast('续订成功！下次提醒：'+formatDate(data.nextReminder)); loadTasks(); }
   else showToast(data.message||'续订失败','error');
 }
-
 async function deleteTask(id) {
   if(!confirm('确认删除？')) return;
   const resp = await fetch('/api/tasks/'+id, { method: 'DELETE', headers: getHeaders() });
@@ -945,7 +1064,6 @@ async function deleteTask(id) {
   if(data.success){ showToast('已删除'); loadTasks(); }
   else showToast(data.message||'删除失败','error');
 }
-
 async function viewHistory(id) {
   const resp = await fetch('/api/tasks/'+id+'/history', { headers: getHeaders() });
   const data = await resp.json();
@@ -954,7 +1072,6 @@ async function viewHistory(id) {
   else list.innerHTML = data.history.map(h=>'<div class="history-item">🔄 '+formatFullDate(h.renewedAt)+' → 下次提醒 '+formatDate(h.nextReminder)+'</div>').join('');
   openModal('historyModal');
 }
-
 async function testTask(id) {
   try {
     const resp = await fetch('/api/tasks/'+id+'/test', { method: 'POST', headers: getHeaders() });
@@ -977,7 +1094,6 @@ async function openConfigModal() {
   renderNotifierFields(selected, data);
   openModal('configModal');
 }
-
 function renderNotifierFields(selectedTypes, data) {
   const container = document.getElementById('notifierConfigFields');
   const allFields = {
@@ -994,14 +1110,13 @@ function renderNotifierFields(selectedTypes, data) {
       html += '<div class="config-detail"><strong>' + type + '</strong>';
       fields.forEach(f => {
         const val = data[f.key] || '';
-        html += \`<label>\${f.label}</label><input type="text" id="cfg_\${f.key}" value="\${val}">\`;
+        html += '<label>' + f.label + '</label><input type="text" id="cfg_' + f.key + '" value="' + val + '">';
       });
       html += '</div>';
     }
   });
   container.innerHTML = html;
 }
-
 document.addEventListener('change', function(e) {
   if (e.target.closest && e.target.closest('#notifierCheckboxes')) {
     const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked');
@@ -1014,7 +1129,6 @@ document.addEventListener('change', function(e) {
     renderNotifierFields(selected, data);
   }
 });
-
 async function saveConfig() {
   const config = {
     username: document.getElementById('cfgUsername').value.trim(),
@@ -1041,7 +1155,6 @@ async function saveConfig() {
   }
   else showToast(data.message||'保存失败','error');
 }
-
 function logout() { localStorage.removeItem('token'); window.location.href='/login'; }
 
 // 初始化
@@ -1064,7 +1177,7 @@ export default {
     const method = request.method;
 
     if (method === 'OPTIONS') {
-      return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization' } });
+      return new Response(null, { headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Authorization' } });
     }
 
     if (path === '/login') return new Response(getLoginPage(), { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
@@ -1103,7 +1216,6 @@ export default {
       const { name, mode, startDate, periodValue, periodUnit, countdownDays, remindTime, reminderDays, reminderUnits, remark, lunarMonth, lunarDay, lunarLeap, nextReminder } = body;
       if (!name) return errorResponse('缺少任务名称', 400);
       if (!reminderDays || reminderDays.length === 0) return errorResponse('至少需要一组提前提醒', 400);
-      // 验证分钟倍数
       const interval = config.checkInterval || 5;
       const parts = (remindTime || '08:00').split(':');
       if (parseInt(parts[1]) % interval !== 0) {
@@ -1155,7 +1267,6 @@ export default {
       task.lunarDay = body.lunarDay || task.lunarDay;
       task.lunarLeap = body.lunarLeap !== undefined ? body.lunarLeap : task.lunarLeap;
 
-      // 验证分钟倍数
       const interval = config.checkInterval || 5;
       const parts = task.remindTime.split(':');
       if (parseInt(parts[1]) % interval !== 0) {
@@ -1173,14 +1284,13 @@ export default {
       return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
     }
 
-    // 续订（与之前逻辑相同，只更新 nextReminder）
+    // 续订
     if (path.startsWith('/api/tasks/') && path.endsWith('/renew') && method === 'POST') {
       const id = path.split('/')[3];
       const existing = await kv.get('task_' + id);
       if (!existing) return errorResponse('任务不存在', 404);
       const task = JSON.parse(existing);
       const today = new Date().toISOString().split('T')[0];
-      // 根据模式计算新的 nextReminder
       let newNext;
       if (task.mode === 'periodic') {
         const d = new Date(today);
@@ -1197,7 +1307,7 @@ export default {
         const now = new Date();
         const next = LunarCalendar.nextLunarDate(task.lunarMonth, task.lunarDay, task.lunarLeap, now);
         if (!next) return errorResponse('无法计算农历日期', 400);
-        newNext = `${next.year}-${String(next.month).padStart(2,'0')}-${String(next.day).padStart(2,'0')}`;
+        newNext = next.year + '-' + String(next.month).padStart(2,'0') + '-' + String(next.day).padStart(2,'0');
       } else {
         return errorResponse('未知模式', 400);
       }
@@ -1227,8 +1337,8 @@ export default {
       const existing = await kv.get('task_' + id);
       if (!existing) return errorResponse('任务不存在', 404);
       const task = JSON.parse(existing);
-      const title = `🧪 测试推送：${task.name}`;
-      const content = `这是任务 "${task.name}" 的测试消息。\n📅 提醒日：${task.nextReminder} ${task.remindTime||'08:00'}\n📝 备注：${task.remark || '无'}`;
+      const title = '🧪 测试推送：' + task.name;
+      const content = '这是任务 "' + task.name + '" 的测试消息。\n📅 提醒日：' + task.nextReminder + ' ' + (task.remindTime||'08:00') + '\n📝 备注：' + (task.remark || '无');
       const result = await sendNotificationWithRetry(config, title, content, task);
       if (result.success) {
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
@@ -1282,7 +1392,6 @@ export default {
       const remindDateTime = new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00');
       let diffHours = (remindDateTime - beijingNow) / (1000 * 60 * 60);
 
-      // 兜底调整到最近的倍数点
       const reminderMinute = remindDateTime.getMinutes();
       const adjustedMinute = Math.floor(reminderMinute / interval) * interval;
       if (adjustedMinute !== reminderMinute) {
@@ -1299,16 +1408,16 @@ export default {
         let threshold = val;
         if (unit === 'day') threshold *= 24;
         if (Math.abs(diffHours - threshold) < 0.5) {
-          const title = `⏰ 任务提醒：${task.name}`;
-          const content = `📋 "${task.name}" 提醒日即将到来！\n📅 日期：${task.nextReminder} ${task.remindTime||'08:00'}\n📝 备注：${task.remark || '无'}`;
+          const title = '⏰ 任务提醒：' + task.name;
+          const content = '📋 "' + task.name + '" 提醒日即将到来！\n📅 日期：' + task.nextReminder + ' ' + (task.remindTime||'08:00') + '\n📝 备注：' + (task.remark || '无');
           await sendNotificationWithRetry(config, title, content, task);
           break;
         }
       }
 
       if (diffHours < -1) {
-        const title = `⚠️ 任务过期：${task.name}`;
-        const content = `📋 "${task.name}" 已过期！\n📅 提醒日：${task.nextReminder} ${task.remindTime||'08:00'}\n请及时续订。`;
+        const title = '⚠️ 任务过期：' + task.name;
+        const content = '📋 "' + task.name + '" 已过期！\n📅 提醒日：' + task.nextReminder + ' ' + (task.remindTime||'08:00') + '\n请及时续订。';
         await sendNotificationWithRetry(config, title, content, task);
       }
     }
@@ -1382,7 +1491,7 @@ async function sendNotification(config, title, content, task) {
       switch (type) {
         case 'serverchan':
           if (!config.serverchanKey) { result.error = '未配置 SendKey'; break; }
-          const sc = await fetch(`https://sctapi.ftqq.com/${config.serverchanKey}.send`, {
+          const sc = await fetch('https://sctapi.ftqq.com/' + config.serverchanKey + '.send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({ title, desp: content })
@@ -1405,10 +1514,10 @@ async function sendNotification(config, title, content, task) {
 
         case 'telegram':
           if (!config.tgBotToken || !config.tgChatId) { result.error = '未配置 Telegram'; break; }
-          const tg = await fetch(`https://api.telegram.org/bot${config.tgBotToken}/sendMessage`, {
+          const tg = await fetch('https://api.telegram.org/bot' + config.tgBotToken + '/sendMessage', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: config.tgChatId, text: `*${title}*\n${content}`, parse_mode: 'Markdown' })
+            body: JSON.stringify({ chat_id: config.tgChatId, text: '*' + title + '*\n' + content, parse_mode: 'Markdown' })
           });
           const tgd = await tg.json();
           result.success = tgd.ok;
@@ -1420,7 +1529,7 @@ async function sendNotification(config, title, content, task) {
           const em = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.emailApiKey },
-            body: JSON.stringify({ from: config.emailFrom, to: [config.emailTo], subject: title, html: `<h2>${title}</h2><p>${content.replace(/\n/g,'<br>')}</p>` })
+            body: JSON.stringify({ from: config.emailFrom, to: [config.emailTo], subject: title, html: '<h2>' + title + '</h2><p>' + content.replace(/\n/g,'<br>') + '</p>' })
           });
           result.success = em.ok;
           if (!result.success) result.error = 'HTTP ' + em.status;
@@ -1429,7 +1538,7 @@ async function sendNotification(config, title, content, task) {
         case 'notifyx':
           if (!config.notifyxApiKey) { result.error = '未配置 NotifyX API Key'; break; }
           try {
-            const url = `https://www.notifyx.cn/api/v1/send/${config.notifyxApiKey}`;
+            const url = 'https://www.notifyx.cn/api/v1/send/' + config.notifyxApiKey;
             const response = await fetch(url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1437,7 +1546,7 @@ async function sendNotification(config, title, content, task) {
             });
             if (!response.ok) {
               const text = await response.text();
-              result.error = `HTTP ${response.status}: ${text.substring(0, 100)}`;
+              result.error = 'HTTP ' + response.status + ': ' + text.substring(0, 100);
               break;
             }
             const data = await response.json();
@@ -1458,7 +1567,7 @@ async function sendNotification(config, title, content, task) {
       result.error = e.message;
     }
     results.push(result);
-    console.log(`[通知] ${type}: ${result.success ? '✅' : '❌ ' + result.error}`);
+    console.log('[通知] ' + type + ': ' + (result.success ? '✅' : '❌ ' + result.error));
   }
 
   const anySuccess = results.some(r => r.success);
