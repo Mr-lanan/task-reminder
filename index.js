@@ -398,7 +398,13 @@ function getDashboardPage() {
       <span class="next-date-display" id="nextDateDisplay">📅 提醒日：未计算</span>
       <span class="reverse-hint" onclick="reverseCalculate()">🔄 点击提醒日期反向计算</span>
     </div>
-
+    
+    <div style="margin: 8px 0 14px 0;">
+      <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+        <input type="checkbox" id="autoRenew" style="width:auto; margin:0;"> 到提醒日后自动续订
+      </label>
+      <div class="mode-hint">自动续订：到提醒日期后，以当前提醒日为基准计算下一周期；手动续订仍然从当前日期重新开始。</div>
+    </div>
     <label>提前提醒（点击 ➕ 添加多组，单位：天/小时）</label>
     <div id="reminderDaysContainer"></div>
     <button class="btn-primary btn-sm" onclick="addReminderGroup()">➕ 添加一组</button>
@@ -928,6 +934,7 @@ async function loadTasks() {
           '<div class="info"><strong>开始/基准：</strong>' + (t.mode==='countdown' ? '（从今天起）' : (isLunarPeriodic ? '（农历日期）' : formatDate(t.startDate))) + '</div>' +
           '<div class="info"><strong>提醒日：</strong>' + formatDate(t.nextReminder) + ' ' + (t.remindTime||'08:00') + '</div>' +
           '<div class="info"><strong>提前提醒：</strong>' + reminderStr + '</div>' +
+          '<div class="info"><strong>自动续订：</strong>' + (t.autoRenew ? '✅ 开启' : '—') + '</div>' +
           '<div class="info"><strong>备注：</strong>' + (t.remark||'-') + '</div>' +
           '<span class="status ' + (isExpired?'status-expired':'status-active') + '">' + (isExpired?'⚠️ 已过期':'✅ 进行中') + '</span>' +
           '<div class="actions">' +
@@ -965,6 +972,7 @@ function openAddModal() {
   document.getElementById('taskModalTitle').textContent='新建任务';
   document.getElementById('editId').value='';
   document.getElementById('taskName').value='';
+  document.getElementById('autoRenew').checked=false;
   document.getElementById('taskMode').value='periodic';
   const lunarCheckbox = document.getElementById('calendarLunar');
   if (lunarCheckbox) lunarCheckbox.checked = false;
@@ -994,6 +1002,7 @@ async function editTask(id) {
   document.getElementById('taskModalTitle').textContent='编辑任务';
   document.getElementById('editId').value=id;
   document.getElementById('taskName').value=t.name;
+  document.getElementById('autoRenew').checked=!!t.autoRenew;
   document.getElementById('taskMode').value=(t.mode === 'lunar') ? 'periodic' : (t.mode || 'periodic');
   document.getElementById('remindTime').value=t.remindTime || '08:00';
 
@@ -1038,6 +1047,7 @@ async function saveTask() {
   const mode = document.getElementById('taskMode').value;
   const remindTime = document.getElementById('remindTime').value || '08:00';
   const remark = document.getElementById('remark').value.trim();
+  const autoRenew = document.getElementById('autoRenew').checked;
   const reminderGroups = getReminderGroups();
   const lunarCheckbox = document.getElementById('calendarLunar');
   const useLunarCalendar = mode === 'periodic' && lunarCheckbox && lunarCheckbox.checked;
@@ -1052,6 +1062,7 @@ async function saveTask() {
 
   let body = {
     name,
+    autoRenew,
     mode,
     calendarType: useLunarCalendar ? 'lunar' : 'solar',
     remindTime,
@@ -1287,7 +1298,7 @@ export default {
 
     if (path === '/api/tasks' && method === 'POST') {
       const body = await request.json();
-      const { name, mode, calendarType, startDate, periodValue, periodUnit, countdownDays, remindTime, reminderDays, reminderUnits, remark, lunarYear, lunarMonth, lunarDay, lunarLeap, nextReminder } = body;
+      const { name, autoRenew, mode, calendarType, startDate, periodValue, periodUnit, countdownDays, remindTime, reminderDays, reminderUnits, remark, lunarYear, lunarMonth, lunarDay, lunarLeap, nextReminder } = body;
       if (!name) return errorResponse('缺少任务名称', 400);
       if (!reminderDays || reminderDays.length === 0) return errorResponse('至少需要一组提前提醒', 400);
       const interval = config.checkInterval || 5;
@@ -1299,6 +1310,7 @@ export default {
       let task = {
         id: crypto.randomUUID(),
         name,
+        autoRenew: !!autoRenew,
         mode: mode === 'lunar' ? 'periodic' : (mode || 'periodic'),
         calendarType: calendarType || (mode === 'lunar' ? 'lunar' : 'solar'),
         remindTime: remindTime || '08:00',
@@ -1329,6 +1341,7 @@ export default {
       const task = JSON.parse(existingRaw);
       const body = await request.json();
       task.name = body.name || task.name;
+      task.autoRenew = body.autoRenew !== undefined ? !!body.autoRenew : !!task.autoRenew;
       task.mode = body.mode === 'lunar' ? 'periodic' : (body.mode || task.mode);
       task.calendarType = body.calendarType || (body.mode === 'lunar' ? 'lunar' : (task.calendarType || 'solar'));
       task.remindTime = body.remindTime || '08:00';
@@ -1505,12 +1518,62 @@ export default {
             '⏳ 提前提醒：' + val + (unit === 'hour' ? '小时' : '天') + '\n' +
             '📝 备注：' + (task.remark || '无');
 
-          await sendNotificationWithRetry(config, title, content, task);
+          const result = await sendNotificationWithRetry(config, title, content, task);
+          await addPushLog(kv, {
+            type: '提前提醒',
+            taskId: task.id,
+            taskName: task.name,
+            nextReminder: task.nextReminder,
+            remindTime: task.remindTime || '08:00',
+            success: result.success,
+            error: result.error || ''
+          });
           await kv.put(sentKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
-          break;
+break;
         }
       }
-
+      // 自动续订：到提醒时间后，以当前提醒日为基准计算下一周期
+      if (task.autoRenew) {
+        const dueMinutes = (now.getTime() - remindDateTime.getTime()) / 60000;
+        
+        if (dueMinutes >= 0) {
+          const autoRenewKey = 'autorenew_' + task.id + '_' + task.nextReminder + '_' + (task.remindTime || '08:00');
+          const alreadyAutoRenewed = await kv.get(autoRenewKey);
+          
+          if (!alreadyAutoRenewed) {
+            const oldNext = task.nextReminder;
+            const newNext = calcNextFromReminderDate(task);
+            
+            if (newNext && newNext !== oldNext) {
+              task.startDate = oldNext;
+              task.nextReminder = newNext;
+              // 如果是农历任务，顺便更新 lunarYear，方便编辑时显示下一年
+              if (task.calendarType === 'lunar' || task.mode === 'lunar') {
+                const lunar = LunarCalendar.solarToLunar(
+                  parseInt(newNext.split('-')[0]),
+                  parseInt(newNext.split('-')[1]),
+                  parseInt(newNext.split('-')[2])
+                );
+                if (lunar) task.lunarYear = lunar.lunarYear;
+              }
+              await kv.put('task_' + task.id, JSON.stringify(task));
+              await kv.put(autoRenewKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
+              
+              await addPushLog(kv, {
+                type: '自动续订',
+                taskId: task.id,
+                taskName: task.name,
+                nextReminder: newNext,
+                remindTime: task.remindTime || '08:00',
+                success: true,
+                error: '旧提醒日：' + oldNext
+              });
+            }
+          }
+          // 开启自动续订的任务，不再发送过期提醒
+          continue;
+        }
+      }
       const expiredMinutes = (now.getTime() - remindDateTime.getTime()) / 60000;
       if (expiredMinutes >= 60) {
         const expiredKey = 'expired_' + task.id + '_' + task.nextReminder + '_' + (task.remindTime || '08:00');
@@ -1518,7 +1581,16 @@ export default {
         if (!expiredSent) {
           const title = '⚠️ 任务过期：' + task.name;
           const content = '📋 "' + task.name + '" 已过期！\n📅 提醒日：' + task.nextReminder + ' ' + (task.remindTime||'08:00') + '\n请及时续订。';
-          await sendNotificationWithRetry(config, title, content, task);
+          const result = await sendNotificationWithRetry(config, title, content, task);
+          await addPushLog(kv, {
+            type: '过期提醒',
+            taskId: task.id,
+            taskName: task.name,
+            nextReminder: task.nextReminder,
+            remindTime: task.remindTime || '08:00',
+            success: result.success,
+            error: result.error || ''
+          });
           await kv.put(expiredKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
         }
       }
@@ -1552,7 +1624,66 @@ function addDays(dateStr, days) {
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
 }
+function formatDateLocal(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
 
+function parseDateLocal(dateStr) {
+  const parts = dateStr.split('-').map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function calcNextFromReminderDate(task) {
+  if (!task || !task.nextReminder) return null;
+
+  const isLunarPeriodic = task.calendarType === 'lunar' || task.mode === 'lunar';
+
+  // 农历：从当前提醒日的后一天开始，寻找下一次同农历月日
+  if (isLunarPeriodic) {
+    const from = parseDateLocal(task.nextReminder);
+    from.setDate(from.getDate() + 1);
+
+    const next = LunarCalendar.nextLunarDate(
+      task.lunarMonth,
+      task.lunarDay,
+      task.lunarLeap,
+      from
+    );
+
+    if (!next) return null;
+
+    return next.year + '-' +
+      String(next.month).padStart(2, '0') + '-' +
+      String(next.day).padStart(2, '0');
+  }
+
+  // 公历周期：从当前提醒日继续加周期
+  if (task.mode === 'periodic') {
+    const d = parseDateLocal(task.nextReminder);
+    const val = parseInt(task.periodValue) || 1;
+    const unit = task.periodUnit || 'month';
+
+    switch(unit) {
+      case 'day': d.setDate(d.getDate() + val); break;
+      case 'week': d.setDate(d.getDate() + val * 7); break;
+      case 'month': d.setMonth(d.getMonth() + val); break;
+      case 'year': d.setFullYear(d.getFullYear() + val); break;
+    }
+
+    return formatDateLocal(d);
+  }
+
+  // 倒数日：从当前提醒日继续加间隔天数
+  if (task.mode === 'countdown') {
+    const d = parseDateLocal(task.nextReminder);
+    d.setDate(d.getDate() + (parseInt(task.countdownDays) || 1));
+    return formatDateLocal(d);
+  }
+
+  return null;
+}
 async function generateJWT(payload, secret) {
   const encoder = new TextEncoder();
   const data = encoder.encode(JSON.stringify({ ...payload, exp: Date.now() + 86400000 }));
