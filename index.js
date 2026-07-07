@@ -402,32 +402,52 @@ function getDashboardPage() {
       <input type="number" id="countdownDays" value="30" min="1" onchange="updateNextDateFromStart()">
     </div>
 
-    <div id="lunarFields" style="display:none;">
-      <div class="form-row">
-        <div><label>农历年</label>
-          <select id="lunarYear" onchange="updateLunarNext()">
-            <!-- JS 动态生成年份 -->
-          </select>
-        </div>
-        <div><label>农历月</label>
-          <select id="lunarMonth" onchange="updateLunarNext()">
-            <option value="1">正月</option><option value="2">二月</option><option value="3">三月</option><option value="4">四月</option>
-            <option value="5">五月</option><option value="6">六月</option><option value="7">七月</option><option value="8">八月</option>
-            <option value="9">九月</option><option value="10">十月</option><option value="11">冬月</option><option value="12">腊月</option>
-          </select>
-        </div>
-        <div><label>农历日</label>
-          <select id="lunarDay" onchange="updateLunarNext()">
-            <!-- JS 动态生成 1-30 -->
-          </select>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <label style="margin-bottom:0;">闰月</label>
-          <input type="checkbox" id="lunarLeap" onchange="updateLunarNext()">
-        </div>
-      </div>
-      <div class="lunar-display" id="lunarNextDisplay">📅 对应公历提醒日期：--</div>
-    </div>
+   <div id="lunarFields" style="display:none;">
+     <div class="form-row">
+       <div>
+         <label>农历年</label>
+         <select id="lunarYear" onchange="updateLunarNext()">
+           <!-- JS 动态生成年份 -->
+         </select>
+       </div>
+
+       <div>
+         <label>农历月</label>
+         <select id="lunarMonth" onchange="updateLunarNext()">
+           <option value="1">正月</option>
+           <option value="2">二月</option>
+           <option value="3">三月</option>
+           <option value="4">四月</option>
+           <option value="5">五月</option>
+           <option value="6">六月</option>
+           <option value="7">七月</option>
+           <option value="8">八月</option>
+           <option value="9">九月</option>
+           <option value="10">十月</option>
+           <option value="11">冬月</option>
+           <option value="12">腊月</option>
+         </select>
+       </div>
+
+       <div>
+         <label>农历日</label>
+         <select id="lunarDay" onchange="updateLunarNext()">
+           <!-- JS 动态生成 1-30 -->
+         </select>
+       </div>
+
+       <div style="display:flex; align-items:center; gap:8px;">
+         <label style="margin-bottom:0;">这是闰月日期</label>
+         <input type="checkbox" id="lunarLeap" onchange="updateLunarNext()">
+       </div>
+     </div>
+
+     <div class="mode-hint" style="margin-bottom:10px;">
+    只有开始日期本身是“闰X月”时才勾选；普通农历生日不要勾选。
+   </div>
+
+  <div class="lunar-display" id="lunarNextDisplay">📅 农历周期后对应公历提醒日期：--</div>
+</div>
 
     <div class="form-row">
       <div><label>提醒日期（公历）</label><input type="date" id="reminderDate" onchange="showLunar()"></div>
@@ -848,13 +868,6 @@ function toggleModeFields() {
 }
 
 function toggleCalendarFields() {
-  const lunarCheckbox = document.getElementById('calendarLunar');
-
-  if (lunarCheckbox && lunarCheckbox.checked) {
-    document.getElementById('periodValue').value = '1';
-    document.getElementById('periodUnit').value = 'year';
-  }
-
   toggleModeFields();
 }
 
@@ -867,22 +880,24 @@ function populateLunarYears(selectedYear) {
 
   select.innerHTML = '';
 
-  for (let y = nowYear; y <= 2100; y++) {
+  for (let y = 1900; y <= 2100; y++) {
     const opt = document.createElement('option');
     opt.value = y;
     opt.textContent = y + '年';
     select.appendChild(opt);
   }
 
-  if (oldValue >= nowYear && oldValue <= 2100) {
+  if (oldValue >= 1900 && oldValue <= 2100) {
     select.value = oldValue;
   } else {
     select.value = nowYear;
   }
 }
-
-function populateLunarDays() {
+function populateLunarDays(selectedDay) {
   const select = document.getElementById('lunarDay');
+  if (!select) return;
+
+  const oldValue = selectedDay || parseInt(select.value) || 1;
   select.innerHTML = '';
 
   for (let i = 1; i <= 30; i++) {
@@ -891,6 +906,108 @@ function populateLunarDays() {
     opt.textContent = i + '日';
     select.appendChild(opt);
   }
+
+  if (oldValue >= 1 && oldValue <= 30) {
+    select.value = oldValue;
+  }
+}
+
+function formatDateObjLocal(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function formatSolarObj(solar) {
+  return solar.year + '-' +
+    String(solar.month).padStart(2, '0') + '-' +
+    String(solar.day).padStart(2, '0');
+}
+
+function isValidLunarDate(year, month, day, isLeap) {
+  const days = LunarCalendar.getLunarMonthDays(year, month, isLeap);
+  return days > 0 && day >= 1 && day <= days;
+}
+
+function getValidLunarTargetSolar(year, month, day, isLeap) {
+  if (year < 1900 || year > 2100) return null;
+
+  const days = LunarCalendar.getLunarMonthDays(year, month, isLeap);
+  if (days <= 0) return null;
+
+  const realDay = Math.min(day, days);
+  return LunarCalendar.lunarToSolar(year, month, realDay, isLeap);
+}
+
+function addLunarMonths(year, month, addMonths) {
+  const total = year * 12 + (month - 1) + addMonths;
+
+  return {
+    year: Math.floor(total / 12),
+    month: (total % 12) + 1
+  };
+}
+
+function calcLunarPeriodicNextDate(lunarYear, lunarMonth, lunarDay, lunarLeap, periodValue, periodUnit) {
+  periodValue = parseInt(periodValue) || 1;
+  if (periodValue < 1) periodValue = 1;
+
+  periodUnit = periodUnit || 'year';
+
+  if (!isValidLunarDate(lunarYear, lunarMonth, lunarDay, lunarLeap)) {
+    return null;
+  }
+
+  if (periodUnit === 'day' || periodUnit === 'week') {
+    const startSolar = LunarCalendar.lunarToSolar(lunarYear, lunarMonth, lunarDay, lunarLeap);
+    if (!startSolar) return null;
+
+    const d = new Date(startSolar.year, startSolar.month - 1, startSolar.day);
+
+    if (periodUnit === 'day') {
+      d.setDate(d.getDate() + periodValue);
+    } else {
+      d.setDate(d.getDate() + periodValue * 7);
+    }
+
+    return formatDateObjLocal(d);
+  }
+
+  let targetYear = lunarYear;
+  let targetMonth = lunarMonth;
+  let targetLeap = false;
+
+  if (periodUnit === 'year') {
+    targetYear = lunarYear + periodValue;
+    targetMonth = lunarMonth;
+    targetLeap = !!lunarLeap;
+  } else if (periodUnit === 'month') {
+    const next = addLunarMonths(lunarYear, lunarMonth, periodValue);
+    targetYear = next.year;
+    targetMonth = next.month;
+    targetLeap = false;
+  }
+
+  for (let i = 0; i < 300; i++) {
+    const solar = getValidLunarTargetSolar(targetYear, targetMonth, lunarDay, targetLeap);
+
+    if (solar) {
+      return formatSolarObj(solar);
+    }
+
+    if (periodUnit === 'year') {
+      targetYear += periodValue;
+    } else if (periodUnit === 'month') {
+      const next = addLunarMonths(targetYear, targetMonth, periodValue);
+      targetYear = next.year;
+      targetMonth = next.month;
+      targetLeap = false;
+    } else {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 function updateLunarNext() {
@@ -899,23 +1016,39 @@ function updateLunarNext() {
   const day = parseInt(document.getElementById('lunarDay').value);
   const isLeap = document.getElementById('lunarLeap').checked;
 
-  const solar = LunarCalendar.lunarToSolar(year, month, day, isLeap);
+  const periodValue = parseInt(document.getElementById('periodValue').value) || 1;
+  const periodUnit = document.getElementById('periodUnit').value || 'year';
 
-  if (solar) {
-    const dateStr =
-      solar.year + '-' +
-      String(solar.month).padStart(2, '0') + '-' +
-      String(solar.day).padStart(2, '0');
+  if (!isValidLunarDate(year, month, day, isLeap)) {
+    document.getElementById('lunarNextDisplay').textContent =
+      '📅 农历周期后对应公历提醒日期：无效农历日期，请检查是否误勾选闰月';
+    document.getElementById('reminderDate').value = '';
+    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：未计算';
+    showLunar();
+    return;
+  }
 
-    document.getElementById('lunarNextDisplay').textContent = '📅 对应公历提醒日期：' + dateStr;
-    document.getElementById('reminderDate').value = dateStr;
-    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：' + dateStr;
+  const startSolar = LunarCalendar.lunarToSolar(year, month, day, isLeap);
+  const nextDate = calcLunarPeriodicNextDate(year, month, day, isLeap, periodValue, periodUnit);
+
+  if (startSolar && nextDate) {
+    const startDateStr = formatSolarObj(startSolar);
+
+    document.getElementById('lunarNextDisplay').textContent =
+      '📅 农历开始日期对应公历：' + startDateStr +
+      '；周期后提醒日：' + nextDate;
+
+    document.getElementById('reminderDate').value = nextDate;
+    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：' + nextDate;
     showLunar();
   } else {
-    document.getElementById('lunarNextDisplay').textContent = '📅 对应公历提醒日期：--';
+    document.getElementById('lunarNextDisplay').textContent =
+      '📅 农历周期后对应公历提醒日期：无法计算';
+    document.getElementById('reminderDate').value = '';
+    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：未计算';
+    showLunar();
   }
 }
-
 function updateNextDateFromStart() {
   const mode = document.getElementById('taskMode').value;
   const lunarCheckbox = document.getElementById('calendarLunar');
@@ -1266,7 +1399,7 @@ async function editTask(id) {
 
     if (isLunarPeriodic) {
       populateLunarYears(t.lunarYear || new Date(t.nextReminder || new Date()).getFullYear());
-      populateLunarDays();
+      populateLunarDays(t.lunarDay || 1);
 
       document.getElementById('lunarYear').value = t.lunarYear || new Date(t.nextReminder || new Date()).getFullYear();
       document.getElementById('lunarMonth').value = t.lunarMonth || 1;
@@ -1351,25 +1484,32 @@ async function saveTask() {
       const lunarMonth = parseInt(document.getElementById('lunarMonth').value);
       const lunarDay = parseInt(document.getElementById('lunarDay').value);
       const lunarLeap = document.getElementById('lunarLeap').checked;
-
+      
       body.lunarYear = lunarYear;
       body.lunarMonth = lunarMonth;
       body.lunarDay = lunarDay;
       body.lunarLeap = lunarLeap;
-
-      const next = LunarCalendar.lunarToSolar(lunarYear, lunarMonth, lunarDay, lunarLeap);
-
-      if (!next) {
-        showToast('无法计算农历日期，请检查年份、日期，或者是否勾选了不存在的闰月', 'error');
+      if (!isValidLunarDate(lunarYear, lunarMonth, lunarDay, lunarLeap)) {
+        showToast('无效农历日期：只有开始日期本身是“闰X月”时才勾选；普通农历生日不要勾选。', 'error');
         return;
       }
-
-      body.nextReminder =
-        next.year + '-' +
-        String(next.month).padStart(2, '0') + '-' +
-        String(next.day).padStart(2, '0');
-
-      body.startDate = body.nextReminder;
+      const startSolar = LunarCalendar.lunarToSolar(lunarYear, lunarMonth, lunarDay, lunarLeap);
+      const nextDate = calcLunarPeriodicNextDate(
+        lunarYear,
+        lunarMonth,
+        lunarDay,
+        lunarLeap,
+        periodValue,
+        periodUnit
+      );
+      
+      if (!startSolar || !nextDate) {
+        showToast('无法计算农历周期提醒日期，请检查年份、日期、周期或闰月设置', 'error');
+        return;
+      }
+      
+      body.startDate = formatSolarObj(startSolar);
+      body.nextReminder = nextDate;
     } else {
       const startDate = document.getElementById('startDate').value;
 
@@ -1779,27 +1919,113 @@ function getRetryWindowMinutes(config) {
   return Math.max(interval * 10 + 2, 52);
 }
 
+function formatSolarObjForWorker(solar) {
+  return solar.year + '-' +
+    String(solar.month).padStart(2, '0') + '-' +
+    String(solar.day).padStart(2, '0');
+}
+
+function getValidLunarTargetSolarForWorker(year, month, day, isLeap) {
+  if (year < 1900 || year > 2100) return null;
+
+  const days = LunarCalendar.getLunarMonthDays(year, month, isLeap);
+  if (days <= 0) return null;
+
+  const realDay = Math.min(day, days);
+  return LunarCalendar.lunarToSolar(year, month, realDay, isLeap);
+}
+
+function addLunarMonthsForWorker(year, month, addMonths) {
+  const total = year * 12 + (month - 1) + addMonths;
+
+  return {
+    year: Math.floor(total / 12),
+    month: (total % 12) + 1
+  };
+}
+
+function calcLunarPeriodicNextDateForWorker(lunarYear, lunarMonth, lunarDay, lunarLeap, periodValue, periodUnit) {
+  periodValue = parseInt(periodValue) || 1;
+  if (periodValue < 1) periodValue = 1;
+
+  periodUnit = periodUnit || 'year';
+
+  if (periodUnit === 'day' || periodUnit === 'week') {
+    const startSolar = LunarCalendar.lunarToSolar(lunarYear, lunarMonth, lunarDay, lunarLeap);
+    if (!startSolar) return null;
+
+    const d = new Date(startSolar.year, startSolar.month - 1, startSolar.day);
+
+    if (periodUnit === 'day') {
+      d.setDate(d.getDate() + periodValue);
+    } else {
+      d.setDate(d.getDate() + periodValue * 7);
+    }
+
+    return formatDateLocal(d);
+  }
+
+  let targetYear = lunarYear;
+  let targetMonth = lunarMonth;
+  let targetLeap = false;
+
+  if (periodUnit === 'year') {
+    targetYear = lunarYear + periodValue;
+    targetMonth = lunarMonth;
+    targetLeap = !!lunarLeap;
+  } else if (periodUnit === 'month') {
+    const next = addLunarMonthsForWorker(lunarYear, lunarMonth, periodValue);
+    targetYear = next.year;
+    targetMonth = next.month;
+    targetLeap = false;
+  }
+
+  for (let i = 0; i < 300; i++) {
+    const solar = getValidLunarTargetSolarForWorker(targetYear, targetMonth, lunarDay, targetLeap);
+
+    if (solar) {
+      return formatSolarObjForWorker(solar);
+    }
+
+    if (periodUnit === 'year') {
+      targetYear += periodValue;
+    } else if (periodUnit === 'month') {
+      const next = addLunarMonthsForWorker(targetYear, targetMonth, periodValue);
+      targetYear = next.year;
+      targetMonth = next.month;
+      targetLeap = false;
+    } else {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 function calcNextFromReminderDate(task) {
   if (!task || !task.nextReminder) return null;
 
   const isLunarPeriodic = task.calendarType === 'lunar' || task.mode === 'lunar';
 
   if (isLunarPeriodic) {
-    const from = parseDateLocal(task.nextReminder);
-    from.setDate(from.getDate() + 1);
+    const parts = task.nextReminder.split('-').map(Number);
 
-    const next = LunarCalendar.nextLunarDate(
-      task.lunarMonth,
-      task.lunarDay,
-      task.lunarLeap,
-      from
+    const currentLunar = LunarCalendar.solarToLunar(
+      parts[0],
+      parts[1],
+      parts[2]
     );
 
-    if (!next) return null;
+    if (!currentLunar) return null;
 
-    return next.year + '-' +
-      String(next.month).padStart(2, '0') + '-' +
-      String(next.day).padStart(2, '0');
+    return calcLunarPeriodicNextDateForWorker(
+      currentLunar.lunarYear,
+      currentLunar.lunarMonth,
+      currentLunar.lunarDay,
+      currentLunar.isLeapMonth,
+      task.periodValue || 1,
+      task.periodUnit || 'year'
+    );
   }
 
   if (task.mode === 'periodic') {
@@ -2328,7 +2554,12 @@ export default {
           parseInt(newNext.split('-')[2])
         );
 
-        if (lunar) task.lunarYear = lunar.lunarYear;
+        if (lunar) {
+          task.lunarYear = lunar.lunarYear;
+          task.lunarMonth = lunar.lunarMonth;
+          task.lunarDay = lunar.lunarDay;
+          task.lunarLeap = lunar.isLeapMonth;
+        }
       }
 
       await kv.put('task_' + id, JSON.stringify(task));
@@ -2591,7 +2822,12 @@ export default {
                 parseInt(newNext.split('-')[2])
               );
 
-              if (lunar) task.lunarYear = lunar.lunarYear;
+              if (lunar) {
+                task.lunarYear = lunar.lunarYear;
+                task.lunarMonth = lunar.lunarMonth;
+                task.lunarDay = lunar.lunarDay;
+                task.lunarLeap = lunar.isLeapMonth;
+              }
             }
 
             await kv.put('task_' + task.id, JSON.stringify(task));
