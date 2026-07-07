@@ -42,7 +42,9 @@ const LunarCalendar = {
     for (let i = 0x8000; i > 0x8; i >>= 1) sum += (info & i) ? 1 : 0;
     return sum + this.getLeapDays(year);
   },
-  getLeapMonth(year) { return lunarInfo[year - 1900] & 0xf; },
+  getLeapMonth(year) {
+    return lunarInfo[year - 1900] & 0xf;
+  },
   getLeapDays(year) {
     const leapMonth = this.getLeapMonth(year);
     if (leapMonth) return (lunarInfo[year - 1900] & 0x10000) ? 30 : 29;
@@ -54,16 +56,20 @@ const LunarCalendar = {
     const targetDate = new Date(year, month - 1, day);
     let offset = Math.floor((targetDate - baseDate) / 86400000) + 1;
     if (offset < 0) return null;
+
     let lunarYear = 1900;
     let daysInLunarYear = this.getLunarYearDays(lunarYear);
+
     while (offset >= daysInLunarYear) {
       offset -= daysInLunarYear;
       lunarYear++;
       daysInLunarYear = this.getLunarYearDays(lunarYear);
     }
+
     let lunarMonth = 1;
     let isLeapMonth = false;
     const leapMonth = this.getLeapMonth(lunarYear);
+
     for (let i = 1; i <= 12; i++) {
       const monthDays = this.getLunarMonthDays(lunarYear, i, false);
       if (offset >= monthDays) {
@@ -86,6 +92,7 @@ const LunarCalendar = {
         break;
       }
     }
+
     if (lunarMonth === 12 && offset >= this.getLunarMonthDays(lunarYear, 12, false)) {
       offset -= this.getLunarMonthDays(lunarYear, 12, false);
       if (leapMonth === 12) {
@@ -103,8 +110,9 @@ const LunarCalendar = {
         lunarMonth = 1;
       }
     }
+
     const lunarDay = offset + 1;
-    const yearOffset = lunarYear - 1900;
+
     return {
       lunarYear,
       lunarMonth,
@@ -121,6 +129,7 @@ const LunarCalendar = {
     if (day === 10) return '初十';
     if (day === 20) return '二十';
     if (day === 30) return '三十';
+
     const numNames = ['','一','二','三','四','五','六','七','八','九','十'];
     if (day < 10) return '初' + numNames[day];
     if (day < 20) return '十' + numNames[day - 10];
@@ -133,23 +142,46 @@ const LunarCalendar = {
 
     const baseDate = new Date(1900, 0, 31);
     let offset = 0;
-    for (let y = 1900; y < year; y++) offset += this.getLunarYearDays(y);
-    for (let m = 1; m < month; m++) offset += this.getLunarMonthDays(year, m, false);
-    if (isLeap && this.getLeapMonth(year) === month) offset += this.getLeapDays(year);
+
+    for (let y = 1900; y < year; y++) {
+      offset += this.getLunarYearDays(y);
+    }
+
+    for (let m = 1; m < month; m++) {
+      offset += this.getLunarMonthDays(year, m, false);
+    }
+
+    if (isLeap && this.getLeapMonth(year) === month) {
+      offset += this.getLeapDays(year);
+    }
+
     offset += day - 1;
     const resultDate = new Date(baseDate.getTime() + offset * 86400000);
-    return { year: resultDate.getFullYear(), month: resultDate.getMonth() + 1, day: resultDate.getDate() };
+
+    return {
+      year: resultDate.getFullYear(),
+      month: resultDate.getMonth() + 1,
+      day: resultDate.getDate()
+    };
   },
   nextLunarDate(lunarMonth, lunarDay, isLeapMonth, fromDate) {
     const from = new Date(fromDate);
     from.setHours(0, 0, 0, 0);
-    
+
     for (let year = from.getFullYear(); year <= 2100; year++) {
       const solar = this.lunarToSolar(year, lunarMonth, lunarDay, isLeapMonth);
       if (!solar) continue;
+
       const solarDate = new Date(solar.year, solar.month - 1, solar.day);
-      if (solarDate >= from) return { year: solar.year, month: solar.month, day: solar.day };
+      if (solarDate >= from) {
+        return {
+          year: solar.year,
+          month: solar.month,
+          day: solar.day
+        };
+      }
     }
+
     return null;
   }
 };
@@ -160,19 +192,23 @@ const LunarCalendar = {
 async function getConfig(env) {
   const kv = env.TASKS_KV;
   let config = {};
+
   try {
     const raw = await kv.get('config');
     if (raw) config = JSON.parse(raw);
   } catch (e) {}
+
   config.username = env.DEFAULT_USERNAME || config.username || 'admin';
   config.password = env.DEFAULT_PASSWORD || config.password || 'admin123';
   config.jwtSecret = env.JWT_SECRET || config.jwtSecret || 'change-this-secret';
   config.checkInterval = parseInt(config.checkInterval) || 5;
+
   if (typeof config.notifierTypes === 'string') {
     config.notifierTypes = config.notifierTypes.split(',').map(s => s.trim()).filter(Boolean);
   } else if (!Array.isArray(config.notifierTypes)) {
     config.notifierTypes = [];
   }
+
   return config;
 }
 
@@ -206,14 +242,18 @@ function getLoginPage() {
 <script>
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
+
     const resp = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
+
     const data = await resp.json();
+
     if (data.success) {
       localStorage.setItem('token', data.token);
       window.location.href = '/';
@@ -236,19 +276,19 @@ function getDashboardPage() {
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: -apple-system, sans-serif; background: #f0f2f5; padding: 20px; }
   .container { max-width: 1200px; margin: 0 auto; }
-  
+
   .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 12px; background: #fff; padding: 16px 20px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
   .dashboard .stat { text-align: center; }
   .dashboard .stat .number { font-size: 28px; font-weight: 700; color: #1a1a2e; }
   .dashboard .stat .label { font-size: 13px; color: #888; margin-top: 2px; }
   .dashboard .stat .number.warning { color: #e67e22; }
   .dashboard .stat .number.danger { color: #e74c3c; }
-  
+
   .header { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 16px 24px; border-radius: 12px; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
   .header h1 { font-size: 22px; }
   .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
   .header-actions button { padding: 8px 18px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: 0.15s; }
-    .btn-primary { background: #4a6cf7; color: #fff; }
+  .btn-primary { background: #4a6cf7; color: #fff; }
   .btn-primary:hover { background: #3a5cd5; }
   .btn-success { background: #2ecc71; color: #fff; }
   .btn-success:hover { background: #27ae60; }
@@ -317,6 +357,7 @@ function getDashboardPage() {
     <div class="header-actions">
       <button class="btn-primary" onclick="openAddModal()">➕ 新建</button>
       <button class="btn-config" onclick="openConfigModal()">⚙️ 配置</button>
+      <button class="btn-history" onclick="viewPushLogs()">📨 推送日志</button>
       <button class="btn-danger" onclick="logout()">退出</button>
     </div>
   </div>
@@ -424,6 +465,17 @@ function getDashboardPage() {
     <h2>📜 续订历史</h2>
     <div id="historyList"></div>
     <div class="form-actions"><button class="btn-outline" onclick="closeModal('historyModal')">关闭</button></div>
+  </div>
+</div>
+
+<!-- 推送日志弹窗 -->
+<div class="modal" id="pushLogModal">
+  <div class="modal-content">
+    <h2>📨 推送日志</h2>
+    <div id="pushLogList"></div>
+    <div class="form-actions">
+      <button class="btn-outline" onclick="closeModal('pushLogModal')">关闭</button>
+    </div>
   </div>
 </div>
 
@@ -885,7 +937,6 @@ function loadReminderGroups(groups) {
     groups.forEach(g => addReminderGroup(g.value, g.unit || 'day'));
   }
 }
-
 function getReminderGroups() {
   const groups = document.querySelectorAll('#reminderDaysContainer .reminder-group');
   const result = [];
@@ -1152,6 +1203,35 @@ async function viewHistory(id) {
   else list.innerHTML = data.history.map(h=>'<div class="history-item">🔄 '+formatFullDate(h.renewedAt)+' → 下次提醒 '+formatDate(h.nextReminder)+'</div>').join('');
   openModal('historyModal');
 }
+
+async function viewPushLogs() {
+  try {
+    const resp = await fetch('/api/push-logs', { headers: getHeaders() });
+    const data = await resp.json();
+    const list = document.getElementById('pushLogList');
+
+    if (!data.logs || data.logs.length === 0) {
+      list.innerHTML = '<p style="color:#999;">暂无推送日志</p>';
+    } else {
+      list.innerHTML = data.logs.map(log => {
+        const status = log.success ? '✅ 成功' : '❌ 失败';
+        const error = log.error ? '<div style="color:#e74c3c;font-size:12px;">信息：' + String(log.error).replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div>' : '';
+        return '<div class="history-item">' +
+          '<div><strong>' + status + '</strong> ' + (log.type || '-') + '</div>' +
+          '<div>📋 任务：' + (log.taskName || '-') + '</div>' +
+          '<div>🕒 时间：' + formatFullDate(log.time) + '</div>' +
+          '<div>📅 提醒日：' + (log.nextReminder || '-') + ' ' + (log.remindTime || '') + '</div>' +
+          error +
+        '</div>';
+      }).join('');
+    }
+
+    openModal('pushLogModal');
+  } catch(e) {
+    showToast('读取推送日志失败', 'error');
+  }
+}
+
 async function testTask(id) {
   try {
     const resp = await fetch('/api/tasks/'+id+'/test', { method: 'POST', headers: getHeaders() });
@@ -1209,6 +1289,19 @@ document.addEventListener('change', function(e) {
     renderNotifierFields(selected, data);
   }
 });
+function validateInterval() {
+  const input = document.getElementById('cfgInterval');
+  const hint = document.getElementById('intervalHint');
+  const val = parseInt(input.value) || 5;
+  if (val < 1 || val > 60) {
+    hint.style.color = '#e74c3c';
+    hint.textContent = '检测间隔必须在 1-60 分钟之间';
+  } else {
+    hint.style.color = '#888';
+    hint.textContent = '当前检测间隔：' + val + ' 分钟。提醒时间的分钟数需要是它的倍数。';
+  }
+}
+
 async function saveConfig() {
   const config = {
     username: document.getElementById('cfgUsername').value.trim(),
@@ -1281,7 +1374,8 @@ export default {
       }
       return new Response(JSON.stringify({ success: false, message: '用户名或密码错误' }), { status: 401, headers: corsHeaders });
     }
-        const auth = request.headers.get('Authorization');
+
+    const auth = request.headers.get('Authorization');
     let user = null;
     if (auth && auth.startsWith('Bearer ')) {
       try { user = await verifyJWT(auth.slice(7), config.jwtSecret); } catch (e) {}
@@ -1440,11 +1534,27 @@ export default {
       const title = '🧪 测试推送：' + task.name;
       const content = '这是任务 "' + task.name + '" 的测试消息。\n📅 提醒日：' + task.nextReminder + ' ' + (task.remindTime||'08:00') + '\n📝 备注：' + (task.remark || '无');
       const result = await sendNotificationWithRetry(config, title, content, task);
+      await addPushLog(kv, {
+        type: '测试推送',
+        taskId: task.id,
+        taskName: task.name,
+        nextReminder: task.nextReminder,
+        remindTime: task.remindTime || '08:00',
+        success: result.success,
+        error: result.error || ''
+      });
       if (result.success) {
         return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
       } else {
         return new Response(JSON.stringify({ success: false, message: result.error }), { status: 500, headers: corsHeaders });
       }
+    }
+
+    // 推送日志
+    if (path === '/api/push-logs' && method === 'GET') {
+      const raw = await kv.get('push_logs');
+      const logs = raw ? JSON.parse(raw) : [];
+      return new Response(JSON.stringify({ success: true, logs }), { headers: corsHeaders });
     }
 
     // 配置
@@ -1518,7 +1628,11 @@ export default {
             '⏳ 提前提醒：' + val + (unit === 'hour' ? '小时' : '天') + '\n' +
             '📝 备注：' + (task.remark || '无');
 
+          // 先写 sentKey，再发送，避免日志/推送异常导致下次 Cron 重复推送
+          await kv.put(sentKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
+
           const result = await sendNotificationWithRetry(config, title, content, task);
+
           await addPushLog(kv, {
             type: '提前提醒',
             taskId: task.id,
@@ -1528,10 +1642,11 @@ export default {
             success: result.success,
             error: result.error || ''
           });
-          await kv.put(sentKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
-break;
+
+          break;
         }
       }
+
       // 自动续订：到提醒时间后，以当前提醒日为基准计算下一周期
       if (task.autoRenew) {
         const dueMinutes = (now.getTime() - remindDateTime.getTime()) / 60000;
@@ -1547,6 +1662,7 @@ break;
             if (newNext && newNext !== oldNext) {
               task.startDate = oldNext;
               task.nextReminder = newNext;
+
               // 如果是农历任务，顺便更新 lunarYear，方便编辑时显示下一年
               if (task.calendarType === 'lunar' || task.mode === 'lunar') {
                 const lunar = LunarCalendar.solarToLunar(
@@ -1556,6 +1672,7 @@ break;
                 );
                 if (lunar) task.lunarYear = lunar.lunarYear;
               }
+
               await kv.put('task_' + task.id, JSON.stringify(task));
               await kv.put(autoRenewKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
               
@@ -1570,18 +1687,26 @@ break;
               });
             }
           }
+
           // 开启自动续订的任务，不再发送过期提醒
           continue;
         }
       }
+
       const expiredMinutes = (now.getTime() - remindDateTime.getTime()) / 60000;
       if (expiredMinutes >= 60) {
         const expiredKey = 'expired_' + task.id + '_' + task.nextReminder + '_' + (task.remindTime || '08:00');
         const expiredSent = await kv.get(expiredKey);
+
         if (!expiredSent) {
           const title = '⚠️ 任务过期：' + task.name;
           const content = '📋 "' + task.name + '" 已过期！\n📅 提醒日：' + task.nextReminder + ' ' + (task.remindTime||'08:00') + '\n请及时续订。';
+
+          // 先写 expiredKey，再发送，避免异常导致重复过期提醒
+          await kv.put(expiredKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
+
           const result = await sendNotificationWithRetry(config, title, content, task);
+
           await addPushLog(kv, {
             type: '过期提醒',
             taskId: task.id,
@@ -1591,30 +1716,65 @@ break;
             success: result.success,
             error: result.error || ''
           });
-          await kv.put(expiredKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
         }
       }
     }
   }
-
 };
 
 // ============================================================
 // 辅助函数
 // ============================================================
 function errorResponse(msg, code) {
-  return new Response(JSON.stringify({ success: false, message: msg }), { status: code, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify({ success: false, message: msg }), {
+    status: code,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
+
+async function addPushLog(kv, log) {
+  try {
+    let logs = [];
+
+    try {
+      const raw = await kv.get('push_logs');
+      logs = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(logs)) logs = [];
+    } catch (e) {
+      logs = [];
+    }
+
+    logs.unshift({
+      time: new Date().toISOString(),
+      type: log.type || '提醒',
+      taskId: log.taskId || '',
+      taskName: log.taskName || '',
+      nextReminder: log.nextReminder || '',
+      remindTime: log.remindTime || '',
+      success: !!log.success,
+      error: log.error || ''
+    });
+
+    logs = logs.slice(0, 30);
+    await kv.put('push_logs', JSON.stringify(logs));
+  } catch (e) {
+    console.log('[推送日志] 写入失败：' + e.message);
+  }
 }
 
 async function getAllTasks(kv) {
   const list = await kv.list({ prefix: 'task_' });
   const tasks = [];
+
   for (const key of list.keys) {
     const raw = await kv.get(key.name);
     if (raw) {
-      try { tasks.push(JSON.parse(raw)); } catch (e) {}
+      try {
+        tasks.push(JSON.parse(raw));
+      } catch (e) {}
     }
   }
+
   tasks.sort((a,b) => new Date(a.nextReminder) - new Date(b.nextReminder));
   return tasks;
 }
@@ -1624,6 +1784,7 @@ function addDays(dateStr, days) {
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
 }
+
 function formatDateLocal(d) {
   return d.getFullYear() + '-' +
     String(d.getMonth() + 1).padStart(2, '0') + '-' +
@@ -1666,10 +1827,18 @@ function calcNextFromReminderDate(task) {
     const unit = task.periodUnit || 'month';
 
     switch(unit) {
-      case 'day': d.setDate(d.getDate() + val); break;
-      case 'week': d.setDate(d.getDate() + val * 7); break;
-      case 'month': d.setMonth(d.getMonth() + val); break;
-      case 'year': d.setFullYear(d.getFullYear() + val); break;
+      case 'day':
+        d.setDate(d.getDate() + val);
+        break;
+      case 'week':
+        d.setDate(d.getDate() + val * 7);
+        break;
+      case 'month':
+        d.setMonth(d.getMonth() + val);
+        break;
+      case 'year':
+        d.setFullYear(d.getFullYear() + val);
+        break;
     }
 
     return formatDateLocal(d);
@@ -1684,10 +1853,17 @@ function calcNextFromReminderDate(task) {
 
   return null;
 }
+
 async function generateJWT(payload, secret) {
   const encoder = new TextEncoder();
   const data = encoder.encode(JSON.stringify({ ...payload, exp: Date.now() + 86400000 }));
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
   const sig = await crypto.subtle.sign('HMAC', key, data);
   return btoa(String.fromCharCode(...new Uint8Array(data))) + '.' + btoa(String.fromCharCode(...new Uint8Array(sig)));
 }
@@ -1695,36 +1871,53 @@ async function generateJWT(payload, secret) {
 async function verifyJWT(token, secret) {
   const parts = token.split('.');
   if (parts.length !== 2) throw new Error('Invalid');
+
   const data = Uint8Array.from(atob(parts[0]), c => c.charCodeAt(0));
   const sig = Uint8Array.from(atob(parts[1]), c => c.charCodeAt(0));
   const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify']
+  );
+
   if (!await crypto.subtle.verify('HMAC', key, sig, data)) throw new Error('Invalid sig');
+
   const payload = JSON.parse(new TextDecoder().decode(data));
   if (payload.exp < Date.now()) throw new Error('Expired');
+
   return payload;
 }
 
 async function sendNotificationWithRetry(config, title, content, task) {
   let result = await sendNotification(config, title, content, task);
   if (result.success) return result;
+
   result = await sendNotification(config, title, content, task);
   return result;
 }
 
 async function sendNotification(config, title, content, task) {
   const enabledTypes = config.notifierTypes || [];
+
   if (enabledTypes.length === 0) {
     return { success: false, error: '未启用任何推送渠道' };
   }
 
   const results = [];
+
   for (const type of enabledTypes) {
     let result = { type, success: false, error: '' };
+
     try {
       switch (type) {
         case 'serverchan':
-          if (!config.serverchanKey) { result.error = '未配置 SendKey'; break; }
+          if (!config.serverchanKey) {
+            result.error = '未配置 SendKey';
+            break;
+          }
           const sc = await fetch('https://sctapi.ftqq.com/' + config.serverchanKey + '.send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1735,7 +1928,10 @@ async function sendNotification(config, title, content, task) {
           break;
 
         case 'pushplus':
-          if (!config.pushplusToken) { result.error = '未配置 Token'; break; }
+          if (!config.pushplusToken) {
+            result.error = '未配置 Token';
+            break;
+          }
           const pp = await fetch('https://www.pushplus.plus/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1747,11 +1943,18 @@ async function sendNotification(config, title, content, task) {
           break;
 
         case 'telegram':
-          if (!config.tgBotToken || !config.tgChatId) { result.error = '未配置 Telegram'; break; }
+          if (!config.tgBotToken || !config.tgChatId) {
+            result.error = '未配置 Telegram';
+            break;
+          }
           const tg = await fetch('https://api.telegram.org/bot' + config.tgBotToken + '/sendMessage', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: config.tgChatId, text: '*' + title + '*\n' + content, parse_mode: 'Markdown' })
+            body: JSON.stringify({
+              chat_id: config.tgChatId,
+              text: '*' + title + '*\n' + content,
+              parse_mode: 'Markdown'
+            })
           });
           const tgd = await tg.json();
           result.success = tgd.ok;
@@ -1759,18 +1962,33 @@ async function sendNotification(config, title, content, task) {
           break;
 
         case 'email':
-          if (!config.emailFrom || !config.emailTo || !config.emailApiKey) { result.error = '邮件配置不完整'; break; }
+          if (!config.emailFrom || !config.emailTo || !config.emailApiKey) {
+            result.error = '邮件配置不完整';
+            break;
+          }
           const em = await fetch('https://api.resend.com/emails', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.emailApiKey },
-            body: JSON.stringify({ from: config.emailFrom, to: [config.emailTo], subject: title, html: '<h2>' + title + '</h2><p>' + content.replace(/\n/g,'<br>') + '</p>' })
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + config.emailApiKey
+            },
+            body: JSON.stringify({
+              from: config.emailFrom,
+              to: [config.emailTo],
+              subject: title,
+              html: '<h2>' + title + '</h2><p>' + content.replace(/\n/g,'<br>') + '</p>'
+            })
           });
           result.success = em.ok;
           if (!result.success) result.error = 'HTTP ' + em.status;
           break;
 
         case 'notifyx':
-          if (!config.notifyxApiKey) { result.error = '未配置 NotifyX API Key'; break; }
+          if (!config.notifyxApiKey) {
+            result.error = '未配置 NotifyX API Key';
+            break;
+          }
+
           try {
             const url = 'https://www.notifyx.cn/api/v1/send/' + config.notifyxApiKey;
             const response = await fetch(url, {
@@ -1778,12 +1996,15 @@ async function sendNotification(config, title, content, task) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ title: title, content: content })
             });
+
             if (!response.ok) {
               const text = await response.text();
               result.error = 'HTTP ' + response.status + ': ' + text.substring(0, 100);
               break;
             }
+
             const data = await response.json();
+
             if (data.status === 'queued' || data.id) {
               result.success = true;
             } else {
@@ -1800,11 +2021,16 @@ async function sendNotification(config, title, content, task) {
     } catch (e) {
       result.error = e.message;
     }
+
     results.push(result);
     console.log('[通知] ' + type + ': ' + (result.success ? '✅' : '❌ ' + result.error));
   }
 
   const anySuccess = results.some(r => r.success);
   const errors = results.filter(r => !r.success).map(r => r.type + ': ' + r.error).join('; ');
-  return { success: anySuccess, error: errors || '全部失败' };
+
+  return {
+    success: anySuccess,
+    error: errors || '全部失败'
+  };
 }
