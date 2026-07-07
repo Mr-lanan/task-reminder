@@ -138,7 +138,14 @@ const LunarCalendar = {
   },
   lunarToSolar(year, month, day, isLeap) {
     if (year < 1900 || year > 2100) return null;
-    if (isLeap && this.getLeapMonth(year) !== month) return null;
+
+    const leapMonth = this.getLeapMonth(year);
+
+    // 如果勾选闰月，但这一年没有对应闰月，直接判定无效。
+    if (isLeap && leapMonth !== month) return null;
+
+    const monthDays = this.getLunarMonthDays(year, month, !!isLeap);
+    if (monthDays <= 0 || day < 1 || day > monthDays) return null;
 
     const baseDate = new Date(1900, 0, 31);
     let offset = 0;
@@ -147,16 +154,23 @@ const LunarCalendar = {
       offset += this.getLunarYearDays(y);
     }
 
+    // 如果目标月份在闰月之后，必须把这一年的闰月天数也加进去。
     for (let m = 1; m < month; m++) {
       offset += this.getLunarMonthDays(year, m, false);
+
+      if (leapMonth === m) {
+        offset += this.getLeapDays(year);
+      }
     }
 
-    if (isLeap && this.getLeapMonth(year) === month) {
-      offset += this.getLeapDays(year);
+    // 如果目标本身就是闰月，应先走完同名的普通月。
+    if (isLeap && leapMonth === month) {
+      offset += this.getLunarMonthDays(year, month, false);
     }
 
     offset += day - 1;
-    const resultDate = new Date(baseDate.getTime() + offset * 86400000);
+
+    const resultDate = new Date(baseDate.getTime() + (offset - 1) * 86400000);
 
     return {
       year: resultDate.getFullYear(),
@@ -660,16 +674,42 @@ const LunarCalendar = {
   },
   lunarToSolar(year, month, day, isLeap) {
     if (year < 1900 || year > 2100) return null;
-    if (isLeap && this.getLeapMonth(year) !== month) return null;
-    
+
+    const leapMonth = this.getLeapMonth(year);
+
+    if (isLeap && leapMonth !== month) return null;
+
+    const monthDays = this.getLunarMonthDays(year, month, !!isLeap);
+    if (monthDays <= 0 || day < 1 || day > monthDays) return null;
+
     const baseDate = new Date(1900, 0, 31);
     let offset = 0;
-    for (let y = 1900; y < year; y++) offset += this.getLunarYearDays(y);
-    for (let m = 1; m < month; m++) offset += this.getLunarMonthDays(year, m, false);
-    if (isLeap && this.getLeapMonth(year) === month) offset += this.getLeapDays(year);
+
+    for (let y = 1900; y < year; y++) {
+      offset += this.getLunarYearDays(y);
+    }
+
+    for (let m = 1; m < month; m++) {
+      offset += this.getLunarMonthDays(year, m, false);
+
+      if (leapMonth === m) {
+        offset += this.getLeapDays(year);
+      }
+    }
+
+    if (isLeap && leapMonth === month) {
+      offset += this.getLunarMonthDays(year, month, false);
+    }
+
     offset += day - 1;
-    const resultDate = new Date(baseDate.getTime() + offset * 86400000);
-    return { year: resultDate.getFullYear(), month: resultDate.getMonth() + 1, day: resultDate.getDate() };
+
+    const resultDate = new Date(baseDate.getTime() + (offset - 1) * 86400000);
+
+    return {
+      year: resultDate.getFullYear(),
+      month: resultDate.getMonth() + 1,
+      day: resultDate.getDate()
+    };
   },
   nextLunarDate(lunarMonth, lunarDay, isLeapMonth, fromDate) {
     const from = new Date(fromDate);
@@ -1353,8 +1393,10 @@ function openAddModal() {
 
   populateLunarYears();
   populateLunarDays();
-
-  document.getElementById('startDate').value = new Date().toISOString().split('T')[0];
+  document.getElementById('lunarMonth').value = '1';
+  document.getElementById('lunarDay').value = '1';
+  document.getElementById('lunarLeap').checked = false;
+  document.getElementById('startDate').value = formatDateObjLocal(new Date());
   document.getElementById('periodValue').value = '1';
   document.getElementById('periodUnit').value = 'month';
   document.getElementById('countdownDays').value = '30';
