@@ -1,10 +1,10 @@
 name = "task-reminder"
 main = "index.js"
-compatibility_date = "2026-07-01"
+compatibility_date = "2026-07-15"
+keep_vars = true
 
 [[kv_namespaces]]
 binding = "TASKS_KV"
-id = "__KV_NAMESPACE_ID__"
 
 [triggers]
 crons = ["*/5 * * * *"]
