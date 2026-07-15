@@ -8,3 +8,5 @@ id = "__KV_NAMESPACE_ID__"
 
 [triggers]
 crons = ["*/5 * * * *"]
+
+
