@@ -1,7 +1,7 @@
 # task-reminder
 # 任务提醒系统（Task Reminder）
 
-基于 Cloudflare Workers 的周期性任务提醒工具，支持续订重置周期、多组提前提醒、5 种通知渠道（Server酱、PushPlus、Telegram、邮件、NotifyX）。
+基于 Cloudflare Workers 的周期性任务提醒工具，支持续订重置周期、多组提前提醒、6 种通知渠道（Server酱、PushPlus、Telegram、Resend、Brevo、NotifyX）。
 
 ## ✨ 特性
 
@@ -10,7 +10,7 @@
 - 续订功能：重置开始日为今天，下次提醒日 = 今天 + 周期
 - 每个任务可设置多个提前提醒天数（如 3,7）
 - 保留最近 21 条续订历史
-- 每小时自动检查并推送提醒
+- Cron 每分钟触发，按后台设置的 1–60 分钟真实间隔检查并推送
 - Web 管理界面，移动端友好
 
 ## 🚀 部署到 Cloudflare Workers（通过 GitHub）
@@ -56,7 +56,8 @@
 - **Server酱**：SendKey（[获取](https://sctapi.ftqq.com/)）
 - **PushPlus**：Token（[获取](https://www.pushplus.plus/)）
 - **Telegram**：Bot Token 和 Chat ID（[教程](https://core.telegram.org/bots)）
-- **邮件**：使用 Resend 的 API Key、发件/收件邮箱
+- **邮件（Resend）**：Resend API Key、发件邮箱和收件邮箱
+- **邮件（Brevo）**：Brevo API Key、已验证的发件邮箱和收件邮箱
 - **NotifyX**：API Key（[获取](https://www.notifyx.cn/)）
 
 配置后点击“测试推送”验证。
@@ -69,3 +70,12 @@ npm install
 
 # 本地测试（需先配置 wrangler.toml 中的 KV ID）
 wrangler dev
+
+
+## ⚠️ 必须配置的安全变量
+
+生产环境务必设置 `JWT_SECRET`、`DEFAULT_USERNAME`、`DEFAULT_PASSWORD`，不要使用代码中的默认值。通知密钥会保存在 KV 配置中，请限制 Worker 后台访问权限。
+
+## 多渠道重试规则
+
+每个已启用渠道独立记录成功状态和重试次数：成功渠道不会重复发送，失败渠道会在后续检测周期继续尝试，单个渠道最多 10 次。当前提醒点结束后不会影响任务下一周期。

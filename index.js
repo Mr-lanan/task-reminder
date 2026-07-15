@@ -539,6 +539,7 @@ function getDashboardPage() {
       <label><input type="checkbox" value="pushplus"> PushPlus</label>
       <label><input type="checkbox" value="telegram"> Telegram</label>
       <label><input type="checkbox" value="email"> 邮件(Resend)</label>
+      <label><input type="checkbox" value="brevo"> 邮件(Brevo)</label>
       <label><input type="checkbox" value="notifyx"> NotifyX</label>
     </div>
     <div id="notifierConfigFields"></div>
@@ -1821,8 +1822,14 @@ function renderNotifierFields(selectedTypes, data) {
     ],
     email: [
       { key: 'emailFrom', label: '发件邮箱' },
-      { key: 'emailTo', label: '收件邮箱' },
+      { key: 'emailTo', label: '收件邮箱（多个用英文逗号分隔）' },
       { key: 'emailApiKey', label: 'API Key (Resend)' }
+    ],
+    brevo: [
+      { key: 'brevoFrom', label: '发件邮箱' },
+      { key: 'brevoFromName', label: '发件人名称（可选）' },
+      { key: 'brevoTo', label: '收件邮箱（多个用英文逗号分隔）' },
+      { key: 'brevoApiKey', label: 'API Key (Brevo)' }
     ],
     notifyx: [{ key: 'notifyxApiKey', label: 'API Key' }]
   };
@@ -2021,6 +2028,22 @@ function getRetryWindowMinutes(config) {
   return Math.max(interval * 10 + 2, 52);
 }
 
+
+async function shouldRunScheduledCheck(kv, interval, scheduledTime) {
+  const key = 'scheduler_last_check';
+  const nowMs = Number(scheduledTime) || Date.now();
+  const minElapsed = Math.max(1, interval) * 60 * 1000;
+
+  try {
+    const raw = await kv.get(key);
+    const lastMs = Number(raw) || 0;
+    if (lastMs > 0 && nowMs - lastMs < minElapsed - 5000) return false;
+  } catch (e) {}
+
+  await kv.put(key, String(nowMs), { expirationTtl: 2 * 24 * 60 * 60 });
+  return true;
+}
+
 function formatSolarObjForWorker(solar) {
   return solar.year + '-' +
     String(solar.month).padStart(2, '0') + '-' +
@@ -2199,11 +2222,11 @@ async function addPushLog(kv, log) {
 // ============================================================
 // 推送重试状态处理
 // 规则：
-// 1. 每次 Cron 只推送 1 次。
-// 2. 任意一个已启用渠道成功，就认定本提醒点成功。
-// 3. 全部渠道失败，才进入下一个 Cron 重试。
-// 4. 每个提醒点最多 10 次。
-// 5. 成功或满 10 次失败后写 doneKey，后续不会重复推送。
+// 1. 每次 Cron 每个尚未成功的渠道只尝试 1 次。
+// 2. 已成功渠道后续重试会跳过，避免重复推送。
+// 3. 每个渠道独立最多尝试 10 次。
+// 4. 全部渠道成功，或所有失败渠道达到 10 次后，本提醒点结束。
+// 5. 单个提醒点结束后写 doneKey，不影响下一周期。
 // ============================================================
 async function handleNotificationWithRetryState(kv, config, task, notifyKey, logType, title, content) {
   const doneKey = 'done_' + notifyKey;
@@ -2219,11 +2242,29 @@ async function handleNotificationWithRetryState(kv, config, task, notifyKey, log
     };
   }
 
+  const enabledTypes = Array.isArray(config.notifierTypes)
+    ? [...new Set(config.notifierTypes.filter(Boolean))]
+    : [];
+
+  if (enabledTypes.length === 0) {
+    await addPushLog(kv, {
+      type: logType,
+      taskId: task.id,
+      taskName: task.name,
+      nextReminder: task.nextReminder,
+      remindTime: task.remindTime || '08:00',
+      success: false,
+      error: '未启用任何推送渠道'
+    });
+    return { finished: false, success: false, reason: 'no_channel' };
+  }
+
   let retryState = {
     attempts: 0,
     firstAt: '',
     lastAt: '',
-    stopped: false
+    stopped: false,
+    channels: {}
   };
 
   try {
@@ -2234,25 +2275,46 @@ async function handleNotificationWithRetryState(kv, config, task, notifyKey, log
         attempts: Number(parsed.attempts) || 0,
         firstAt: parsed.firstAt || '',
         lastAt: parsed.lastAt || '',
-        stopped: !!parsed.stopped
+        stopped: !!parsed.stopped,
+        channels: parsed.channels && typeof parsed.channels === 'object' ? parsed.channels : {}
       };
     }
   } catch (e) {}
 
-  if (retryState.stopped || retryState.attempts >= 10) {
-    retryState.stopped = true;
-    await kv.put(doneKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
-    await kv.put(retryKey, JSON.stringify(retryState), { expirationTtl: 400 * 24 * 60 * 60 });
-
-    return {
-      finished: true,
-      success: false,
-      skipped: true,
-      reason: 'max_attempts_reached'
+  for (const type of enabledTypes) {
+    const old = retryState.channels[type] || {};
+    retryState.channels[type] = {
+      attempts: Number(old.attempts) || 0,
+      success: !!old.success,
+      lastError: old.lastError || ''
     };
   }
 
-  // 同一个提醒点，每次 Cron 只允许尝试一次。
+  // 配置中已取消的渠道不再阻塞当前提醒点。
+  for (const type of Object.keys(retryState.channels)) {
+    if (!enabledTypes.includes(type)) delete retryState.channels[type];
+  }
+
+  const isFinishedChannel = type => {
+    const state = retryState.channels[type];
+    return state.success || state.attempts >= 10;
+  };
+
+  if (enabledTypes.every(isFinishedChannel)) {
+    const allSuccess = enabledTypes.every(type => retryState.channels[type].success);
+    retryState.stopped = true;
+    await kv.put(doneKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
+    if (allSuccess) await kv.delete(retryKey);
+    else await kv.put(retryKey, JSON.stringify(retryState), { expirationTtl: 400 * 24 * 60 * 60 });
+    return {
+      finished: true,
+      success: allSuccess,
+      skipped: true,
+      reason: allSuccess ? 'all_succeeded' : 'max_attempts_reached'
+    };
+  }
+
+  // 同一个提醒点，每个配置周期只允许尝试一次。
   if (retryState.lastAt) {
     const last = new Date(retryState.lastAt);
     const interval = parseInt(config.checkInterval) || 5;
@@ -2268,65 +2330,59 @@ async function handleNotificationWithRetryState(kv, config, task, notifyKey, log
     }
   }
 
-  const result = await sendNotification(config, title, content, task);
+  const pendingTypes = enabledTypes.filter(type => !isFinishedChannel(type));
+  const result = await sendNotification(config, title, content, task, pendingTypes);
+  const nowIso = new Date().toISOString();
 
-  retryState.attempts += 1;
-  if (!retryState.firstAt) retryState.firstAt = new Date().toISOString();
-  retryState.lastAt = new Date().toISOString();
-
-  if (result.success) {
-    await kv.put(doneKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
-    await kv.delete(retryKey);
-
-    await addPushLog(kv, {
-      type: logType,
-      taskId: task.id,
-      taskName: task.name,
-      nextReminder: task.nextReminder,
-      remindTime: task.remindTime || '08:00',
-      success: true,
-      error: '第 ' + retryState.attempts + ' 次成功'
-    });
-
-    return {
-      finished: true,
-      success: true,
-      attempts: retryState.attempts
-    };
+  for (const channelResult of result.results) {
+    const channelState = retryState.channels[channelResult.type];
+    if (!channelState) continue;
+    channelState.attempts += 1;
+    channelState.success = !!channelResult.success;
+    channelState.lastError = channelResult.success ? '' : (channelResult.error || '发送失败');
   }
 
-  if (retryState.attempts >= 10) {
-    retryState.stopped = true;
+  retryState.attempts = Math.max(...enabledTypes.map(type => retryState.channels[type].attempts), 0);
+  if (!retryState.firstAt) retryState.firstAt = nowIso;
+  retryState.lastAt = nowIso;
 
-    await kv.put(doneKey, new Date().toISOString(), { expirationTtl: 400 * 24 * 60 * 60 });
+  const allSuccess = enabledTypes.every(type => retryState.channels[type].success);
+  const finished = enabledTypes.every(isFinishedChannel);
+  retryState.stopped = finished;
 
-    await addPushLog(kv, {
-      type: logType,
-      taskId: task.id,
-      taskName: task.name,
-      nextReminder: task.nextReminder,
-      remindTime: task.remindTime || '08:00',
-      success: false,
-      error: '已连续尝试 10 次，全部渠道失败，停止当前提醒点。最后错误：' + (result.error || '')
-    });
+  const summary = enabledTypes.map(type => {
+    const state = retryState.channels[type];
+    if (state.success) return type + '：成功（第 ' + state.attempts + ' 次）';
+    if (state.attempts >= 10) return type + '：失败 10 次，已停止（' + (state.lastError || '未知错误') + '）';
+    return type + '：第 ' + state.attempts + '/10 次失败（' + (state.lastError || '未知错误') + '）';
+  }).join('；');
+
+  if (finished) {
+    await kv.put(doneKey, nowIso, { expirationTtl: 400 * 24 * 60 * 60 });
+    if (allSuccess) {
+      await kv.delete(retryKey);
+    } else {
+      await kv.put(retryKey, JSON.stringify(retryState), { expirationTtl: 400 * 24 * 60 * 60 });
+    }
   } else {
-    await addPushLog(kv, {
-      type: logType,
-      taskId: task.id,
-      taskName: task.name,
-      nextReminder: task.nextReminder,
-      remindTime: task.remindTime || '08:00',
-      success: false,
-      error: '第 ' + retryState.attempts + '/10 次失败，下次 Cron 继续。' + (result.error || '')
-    });
+    await kv.put(retryKey, JSON.stringify(retryState), { expirationTtl: 400 * 24 * 60 * 60 });
   }
 
-  await kv.put(retryKey, JSON.stringify(retryState), { expirationTtl: 400 * 24 * 60 * 60 });
+  await addPushLog(kv, {
+    type: logType,
+    taskId: task.id,
+    taskName: task.name,
+    nextReminder: task.nextReminder,
+    remindTime: task.remindTime || '08:00',
+    success: allSuccess,
+    error: summary
+  });
 
   return {
-    finished: retryState.stopped || retryState.attempts >= 10,
-    success: false,
-    attempts: retryState.attempts
+    finished,
+    success: allSuccess,
+    attempts: retryState.attempts,
+    channels: retryState.channels
   };
 }
 
@@ -2815,12 +2871,13 @@ export default {
   async scheduled(event, env, ctx) {
     const kv = env.TASKS_KV;
     const config = await getConfig(env);
-    const interval = parseInt(config.checkInterval) || 5;
-    const now = new Date();
-    const minute = now.getMinutes();
+    const interval = Math.min(60, Math.max(1, parseInt(config.checkInterval) || 5));
+    const nowMs = Number(event.scheduledTime) || Date.now();
+    const now = new Date(nowMs);
 
-    // 只在配置的检测间隔点执行。默认 5 分钟。
-    if (minute % interval !== 0) return;
+    // Cron 每分钟触发一次，再按真实经过时间执行配置间隔。
+    // 这样 7、13 等不能整除 60 的间隔也不会失真。
+    if (!await shouldRunScheduledCheck(kv, interval, nowMs)) return;
 
     const tasks = await getAllTasks(kv);
     const retryWindowMinutes = getRetryWindowMinutes(config);
@@ -3071,8 +3128,9 @@ async function safeReadText(resp) {
 // 每次 Cron 只调用 sendNotification() 一次。
 // 重试次数由 handleNotificationWithRetryState() 统一控制。
 // ============================================================
-async function sendNotification(config, title, content, task) {
-  const enabledTypes = config.notifierTypes || [];
+async function sendNotification(config, title, content, task, onlyTypes = null) {
+  const configuredTypes = Array.isArray(config.notifierTypes) ? config.notifierTypes : [];
+  const enabledTypes = Array.isArray(onlyTypes) ? onlyTypes : configuredTypes;
 
   if (enabledTypes.length === 0) {
     return {
@@ -3211,6 +3269,60 @@ async function sendNotification(config, title, content, task) {
           break;
         }
 
+        case 'brevo': {
+          if (!config.brevoFrom || !config.brevoTo || !config.brevoApiKey) {
+            result.error = 'Brevo 邮件配置不完整';
+            break;
+          }
+
+          const html =
+            '<h2>' + escapeHtml(title) + '</h2>' +
+            '<p>' + escapeHtml(content).replace(/\n/g, '<br>') + '</p>';
+
+          const recipients = String(config.brevoTo)
+            .split(',')
+            .map(value => value.trim())
+            .filter(Boolean)
+            .map(email => ({ email }));
+
+          if (recipients.length === 0) {
+            result.error = 'Brevo 收件邮箱为空';
+            break;
+          }
+
+          const payload = {
+            sender: {
+              email: config.brevoFrom,
+              name: config.brevoFromName || undefined
+            },
+            to: recipients,
+            subject: title,
+            textContent: content,
+            htmlContent: html
+          };
+
+          const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'api-key': config.brevoApiKey,
+              'accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.ok) {
+            const data = await safeReadJson(response);
+            result.success = !!(data && (data.messageId || (Array.isArray(data.messageIds) && data.messageIds.length)));
+            if (!result.success) result.error = 'Brevo 未返回 messageId';
+          } else {
+            const data = await safeReadJson(response);
+            result.error = (data && (data.message || data.code)) || ('HTTP ' + response.status);
+          }
+
+          break;
+        }
+
         case 'notifyx': {
           if (!config.notifyxApiKey) {
             result.error = '未配置 NotifyX API Key';
@@ -3260,7 +3372,7 @@ async function sendNotification(config, title, content, task) {
     console.log('[通知] ' + type + ': ' + (result.success ? '✅ 成功' : '❌ ' + result.error));
   }
 
-  const anySuccess = results.some(r => r.success);
+  const allSuccess = results.length > 0 && results.every(r => r.success);
 
   const errors = results
     .filter(r => !r.success)
@@ -3268,8 +3380,8 @@ async function sendNotification(config, title, content, task) {
     .join('; ');
 
   return {
-    success: anySuccess,
-    error: anySuccess ? errors : (errors || '全部渠道失败'),
+    success: allSuccess,
+    error: errors || '',
     results
   };
 }
