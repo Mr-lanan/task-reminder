@@ -8,4 +8,4 @@ crons = ["*/5 * * * *"]
 
 [[kv_namespaces]]
 
-binding="KV"
+binding="TASKS_KV"
