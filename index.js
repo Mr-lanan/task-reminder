@@ -336,6 +336,7 @@ function getDashboardPage() {
   .task-card .status { display: inline-block; padding: 2px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-top: 8px; }
   .status-active { background: #d4edda; color: #155724; }
   .status-expired { background: #f8d7da; color: #721c24; }
+  .status-completed { background: #e9ecef; color: #495057; }
   .task-card .actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); justify-content: center; align-items: center; z-index: 1000; }
   .modal.show { display: flex; }
@@ -517,6 +518,7 @@ function getDashboardPage() {
     <h2>📨 推送日志</h2>
     <div id="pushLogList"></div>
     <div class="form-actions">
+      <button class="btn-danger" onclick="clearPushLogs()">清空日志</button>
       <button class="btn-outline" onclick="closeModal('pushLogModal')">关闭</button>
     </div>
   </div>
@@ -1371,11 +1373,29 @@ function loadReminderGroups(groups) {
   container.innerHTML = '';
   reminderGroupCounter = 0;
 
-  if (groups && groups.length > 0) {
-    groups.forEach(g => addReminderGroup(g.value, g.unit || 'day'));
+  const sortedGroups = sortReminderGroups(groups || []);
+
+  if (sortedGroups.length > 0) {
+    sortedGroups.forEach(g => addReminderGroup(g.value, g.unit || 'day'));
   }
 
   updateReminderPreview();
+}
+
+function getReminderOffsetMinutes(group) {
+  const value = parseInt(group.value) || 0;
+  const unit = group.unit || 'day';
+  return unit === 'hour' ? value * 60 : value * 24 * 60;
+}
+
+function sortReminderGroups(groups) {
+  return (groups || [])
+    .map(g => ({
+      value: parseInt(g.value),
+      unit: g.unit || 'day'
+    }))
+    .filter(g => !isNaN(g.value) && g.value > 0)
+    .sort((a, b) => getReminderOffsetMinutes(b) - getReminderOffsetMinutes(a));
 }
 
 function getReminderGroups() {
@@ -1395,7 +1415,7 @@ function getReminderGroups() {
     }
   });
 
-  return result;
+  return sortReminderGroups(result);
 }
 
 // ===== 认证 & 任务加载 =====
@@ -1435,7 +1455,8 @@ async function loadTasks() {
       container.innerHTML = tasks.map(t => {
         const now = new Date();
         const nextDate = new Date(t.nextReminder + 'T' + (t.remindTime || '08:00') + ':00+08:00');
-        const isExpired = nextDate < now;
+        const isCompleted = !!t.completedAt;
+        const isExpired = !isCompleted && nextDate < now;
         const unitMap = {
           hour: '小时',
           day: '日',
@@ -1446,9 +1467,12 @@ async function loadTasks() {
         const isLunarPeriodic = t.calendarType === 'lunar' || t.mode === 'lunar';
         const isSingle = t.mode === 'countdown';
         const modeLabel = isSingle ? '单次提醒' : (isLunarPeriodic ? '周期/农历' : '周期');
-        const reminderStr = (t.reminderDays || []).map((g, i) => {
-          const u = t.reminderUnits && t.reminderUnits[i] ? t.reminderUnits[i] : 'day';
-          return g + (u === 'hour' ? '小时' : '天');
+        const sortedReminders = sortReminderGroups((t.reminderDays || []).map((g, i) => ({
+          value: g,
+          unit: t.reminderUnits && t.reminderUnits[i] ? t.reminderUnits[i] : 'day'
+        })));
+        const reminderStr = sortedReminders.map(g => {
+          return g.value + (g.unit === 'hour' ? '小时' : '天');
         }).join(', ') || '无';
 
         let ruleStr = '单次提醒';
@@ -1467,7 +1491,11 @@ async function loadTasks() {
           ? ''
           : '<button class="btn-success btn-sm" onclick="renewTask(\\'' + t.id + '\\')">🔄 续订</button>';
 
-        return '<div class="task-card" style="border-left-color:' + (isExpired ? '#e74c3c' : '#2ecc71') + '">' +
+        const statusClass = isCompleted ? 'status-completed' : (isExpired ? 'status-expired' : 'status-active');
+        const statusText = isCompleted ? '✅ 已完成' : (isExpired ? '⚠️ 已过期' : '✅ 进行中');
+        const cardColor = isCompleted ? '#95a5a6' : (isExpired ? '#e74c3c' : '#2ecc71');
+
+        return '<div class="task-card" style="border-left-color:' + cardColor + '">' +
           '<div class="title">' + escapeHtml(t.name) + ' <span style="font-size:12px;color:#999;">[' + modeLabel + ']</span></div>' +
           '<div class="info"><strong>规则：</strong>' + ruleStr + '</div>' +
           '<div class="info"><strong>开始/基准：</strong>' + startInfo + '</div>' +
@@ -1475,7 +1503,7 @@ async function loadTasks() {
           '<div class="info"><strong>提前提醒：</strong>' + reminderStr + '</div>' +
           '<div class="info"><strong>自动续订：</strong>' + (t.autoRenew ? '✅ 开启' : '—') + '</div>' +
           '<div class="info"><strong>备注：</strong>' + escapeHtml(t.remark || '-') + '</div>' +
-          '<span class="status ' + (isExpired ? 'status-expired' : 'status-active') + '">' + (isExpired ? '⚠️ 已过期' : '✅ 进行中') + '</span>' +
+          '<span class="status ' + statusClass + '">' + statusText + '</span>' +
           '<div class="actions">' +
           renewBtn +
           '<button class="btn-primary btn-sm" onclick="editTask(\\'' + t.id + '\\')">✏️ 编辑</button>' +
@@ -1501,6 +1529,8 @@ function updateDashboard(tasks) {
   let active = 0;
 
   tasks.forEach(t => {
+    if (t.completedAt) return;
+
     const dt = new Date(t.nextReminder + 'T' + (t.remindTime || '08:00') + ':00+08:00');
 
     if (dt < now) {
@@ -1670,7 +1700,8 @@ async function saveTask() {
     remark,
     reminderDays: reminderGroups.map(g => g.value),
     reminderUnits: reminderGroups.map(g => g.unit),
-    nextReminder
+    nextReminder,
+    completedAt: ''
   };
 
   if (mode === 'periodic') {
@@ -1851,6 +1882,28 @@ async function viewPushLogs() {
     openModal('pushLogModal');
   } catch (e) {
     showToast('读取推送日志失败', 'error');
+  }
+}
+
+async function clearPushLogs() {
+  if (!confirm('确定清空全部推送日志吗？')) return;
+
+  try {
+    const resp = await fetch('/api/push-logs', {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+
+    const data = await resp.json();
+
+    if (data.success) {
+      document.getElementById('pushLogList').innerHTML = '<p style="color:#999;">暂无推送日志</p>';
+      showToast('推送日志已清空');
+    } else {
+      showToast(data.message || '清空失败', 'error');
+    }
+  } catch (e) {
+    showToast('清空推送日志失败', 'error');
   }
 }
 
@@ -2172,6 +2225,40 @@ function makeRemindDateTime(task) {
   return new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00');
 }
 
+function getReminderOffsetMinutesForWorker(value, unit) {
+  const num = parseInt(value) || 0;
+  return unit === 'hour' ? num * 60 : num * 24 * 60;
+}
+
+function normalizeReminderPairs(reminderDays, reminderUnits) {
+  return (reminderDays || [])
+    .map((value, i) => ({
+      value: parseInt(value),
+      unit: reminderUnits && reminderUnits[i] ? reminderUnits[i] : 'day'
+    }))
+    .filter(g => !isNaN(g.value) && g.value > 0)
+    .sort((a, b) => getReminderOffsetMinutesForWorker(b.value, b.unit) - getReminderOffsetMinutesForWorker(a.value, a.unit));
+}
+
+async function markSingleTaskCompleted(kv, task, reason) {
+  if (!task || task.completedAt) return;
+
+  task.completedAt = new Date().toISOString();
+  task.autoRenew = false;
+
+  await kv.put('task_' + task.id, JSON.stringify(task));
+
+  await addPushLog(kv, {
+    type: '单次完成',
+    taskId: task.id,
+    taskName: task.name,
+    nextReminder: task.nextReminder,
+    remindTime: task.remindTime || '08:00',
+    success: true,
+    error: reason || '到期提醒已结束，单次提醒已标记完成。'
+  });
+}
+
 function makeAdvanceTriggerTime(task, value, unit) {
   const trigger = makeRemindDateTime(task);
 
@@ -2379,7 +2466,7 @@ async function addPushLog(kv, log) {
       error: log.error || ''
     });
 
-    logs = logs.slice(0, 50);
+    logs = logs.slice(0, 200);
 
     await kv.put('push_logs', JSON.stringify(logs));
   } catch (e) {
@@ -2585,7 +2672,7 @@ async function ensureDueReminderCanFinish(kv, config, task, dueNotifyKey) {
     nextReminder: task.nextReminder,
     remindTime: task.remindTime || '08:00',
     success: false,
-    error: '到期提醒重试窗口已结束，已尝试 ' + ((retryState && retryState.attempts) || 0) + ' 次。为避免影响下周期，允许自动续订。'
+    error: '到期提醒重试窗口已结束，已尝试 ' + ((retryState && retryState.attempts) || 0) + ' 次。当前提醒点已结束。'
   });
 
   return true;
@@ -2727,6 +2814,8 @@ export default {
         return errorResponse('提醒时间已经过去，请重新选择', 400);
       }
 
+      const reminderPairs = normalizeReminderPairs(reminderDays || [], reminderUnits || []);
+
       const task = {
         id: crypto.randomUUID(),
         name,
@@ -2734,10 +2823,11 @@ export default {
         mode: mode === 'lunar' ? 'periodic' : (mode || 'periodic'),
         calendarType: calendarType || (mode === 'lunar' ? 'lunar' : 'solar'),
         remindTime: remindTime || '08:00',
-        reminderDays: (reminderDays || []).map(Number),
-        reminderUnits: reminderUnits || [],
+        reminderDays: reminderPairs.map(g => g.value),
+        reminderUnits: reminderPairs.map(g => g.unit),
         remark: remark || '',
         createdAt: new Date().toISOString(),
+        completedAt: '',
         nextReminder,
         startDate: startDate || null,
         startTime: startTime || null,
@@ -2777,9 +2867,11 @@ export default {
       task.calendarType = body.calendarType || (body.mode === 'lunar' ? 'lunar' : (task.calendarType || 'solar'));
       task.remindTime = body.remindTime || '08:00';
       task.remark = body.remark || '';
-      task.reminderDays = (body.reminderDays || []).map(Number);
-      task.reminderUnits = body.reminderUnits || [];
+      const reminderPairs = normalizeReminderPairs(body.reminderDays || [], body.reminderUnits || []);
+      task.reminderDays = reminderPairs.map(g => g.value);
+      task.reminderUnits = reminderPairs.map(g => g.unit);
       task.nextReminder = body.nextReminder || task.nextReminder;
+      task.completedAt = body.completedAt !== undefined ? body.completedAt : task.completedAt;
       task.startDate = body.startDate !== undefined ? body.startDate : task.startDate;
       task.startTime = body.startTime !== undefined ? body.startTime : task.startTime;
       task.periodValue = body.periodValue !== undefined ? body.periodValue : task.periodValue;
@@ -2993,6 +3085,16 @@ export default {
       });
     }
 
+    if (path === '/api/push-logs' && method === 'DELETE') {
+      await kv.delete('push_logs');
+
+      return new Response(JSON.stringify({
+        success: true
+      }), {
+        headers: corsHeaders
+      });
+    }
+
     // ---------- 配置读取 ----------
     if (path === '/api/config' && method === 'GET') {
       const cfg = await getConfig(env);
@@ -3064,18 +3166,18 @@ export default {
     const retryWindowMinutes = getRetryWindowMinutes(config);
 
     for (const task of tasks) {
-      if (!task.nextReminder) continue;
+      if (!task.nextReminder || task.completedAt) continue;
 
       const remindDateTime = makeRemindDateTime(task);
-      const reminderDays = task.reminderDays || [];
-      const reminderUnits = task.reminderUnits || [];
+      const advanceReminders = normalizeReminderPairs(task.reminderDays || [], task.reminderUnits || []);
       const dueMinutes = (now.getTime() - remindDateTime.getTime()) / 60000;
       const dueNotifyKey = 'due_' + task.id + '_' + task.nextReminder + '_' + (task.remindTime || '08:00');
+      let dueResult = null;
 
       // 1）提前提醒：每个提前点独立，最多 10 次
-      for (let i = 0; i < reminderDays.length; i++) {
-        const val = Number(reminderDays[i]);
-        const unit = reminderUnits[i] || 'day';
+      for (let i = 0; i < advanceReminders.length; i++) {
+        const val = Number(advanceReminders[i].value);
+        const unit = advanceReminders[i].unit || 'day';
 
         if (!val || val <= 0) continue;
 
@@ -3120,7 +3222,7 @@ export default {
           '📅 提醒日：' + task.nextReminder + ' ' + (task.remindTime || '08:00') + '\n' +
           '📝 备注：' + (task.remark || '无');
 
-        await handleNotificationWithRetryState(
+        dueResult = await handleNotificationWithRetryState(
           kv,
           config,
           task,
@@ -3131,7 +3233,20 @@ export default {
         );
       }
 
-      // 3）自动续订：到期提醒成功、10次失败，或者重试窗口结束后，才允许续订
+      // 3）单次提醒：到期提醒结束后标记完成，不再进入过期提醒
+      if (task.mode === 'countdown' && dueMinutes >= 0) {
+        const dueFinished = dueResult && dueResult.finished
+          ? true
+          : await ensureDueReminderCanFinish(kv, config, task, dueNotifyKey);
+
+        if (dueFinished) {
+          await markSingleTaskCompleted(kv, task, '到期提醒已结束，单次提醒已标记完成。');
+        }
+
+        continue;
+      }
+
+      // 4）自动续订：到期提醒成功、10次失败，或者重试窗口结束后，才允许续订
       if (task.autoRenew && dueMinutes >= 0) {
         const dueFinished = await ensureDueReminderCanFinish(kv, config, task, dueNotifyKey);
 
