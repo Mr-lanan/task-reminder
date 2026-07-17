@@ -364,6 +364,7 @@ function getDashboardPage() {
   .reverse-hint { font-size: 12px; color: #999; margin-left: 8px; cursor: pointer; text-decoration: underline; }
   .time-error { color: #e74c3c; font-size: 12px; margin-top: -12px; margin-bottom: 12px; display: none; }
   .lunar-display { font-size: 13px; color: #6c5ce7; margin-top: -8px; margin-bottom: 12px; padding: 4px 8px; background: #f3f0ff; border-radius: 6px; }
+  .reminder-preview { margin: 14px 0 16px 0; padding: 12px; background: #f3f0ff; border-radius: 8px; color: #4b3fbf; font-size: 14px; line-height: 1.7; white-space: pre-line; }
   @media (max-width:600px){ .task-grid{grid-template-columns:1fr;} .reminder-group{flex-wrap:wrap;} .dashboard{grid-template-columns:1fr 1fr;} }
 </style></head>
 <body>
@@ -399,17 +400,18 @@ function getDashboardPage() {
     <label>模式</label>
     <select id="taskMode" onchange="toggleModeFields()">
       <option value="periodic">周期模式</option>
-      <option value="countdown">倒数日模式</option>
+      <option value="countdown">单次提醒</option>
     </select>
-    <div class="mode-hint" id="modeHint">周期模式：设置开始日期和周期</div>
+    <div class="mode-hint" id="modeHint">周期模式：设置开始日期、开始时间和周期</div>
 
     <div id="periodicFields">
       <div class="form-row">
         <div id="solarDateRow"><label>开始日期（公历）</label><input type="date" id="startDate" onchange="updateNextDateFromStart()"></div>
+        <div><label>开始时间（北京时间）</label><input type="time" id="startTime" value="08:00" step="60" onchange="validateTime(); updateNextDateFromStart()" oninput="validateTime(); updateNextDateFromStart()"></div>
         <div><label>周期数值</label><input type="number" id="periodValue" value="1" min="1" onchange="updateNextDateFromStart()"></div>
         <div><label>周期单位</label>
           <select id="periodUnit" onchange="updateNextDateFromStart()">
-            <option value="day">日</option><option value="week">周</option><option value="month" selected>月</option><option value="year">年</option>
+            <option value="hour">小时</option><option value="day">日</option><option value="week">周</option><option value="month" selected>月</option><option value="year">年</option>
           </select>
         </div>
       </div>
@@ -417,13 +419,16 @@ function getDashboardPage() {
         <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
           <input type="checkbox" id="calendarLunar" style="width:auto; margin:0;" onchange="toggleCalendarFields()"> 使用农历日期
         </label>
-        <div class="mode-hint">不勾选：按公历开始日期计算；勾选：选择农历月/日，系统自动换算成公历提醒日期。</div>
+        <div class="mode-hint">不勾选：按公历开始日期和开始时间计算；勾选：选择农历月/日，系统自动换算成公历提醒日期。</div>
       </div>
     </div>
 
     <div id="countdownFields" style="display:none;">
-      <label>间隔天数（多少天后提醒）</label>
-      <input type="number" id="countdownDays" value="30" min="1" onchange="updateNextDateFromStart()">
+      <div class="form-row">
+        <div><label>提醒日期（公历）</label><input type="date" id="singleReminderDate" onchange="updateNextDateFromStart()"></div>
+        <div><label>提醒时间（北京时间）</label><input type="time" id="singleReminderTime" value="08:00" step="60" onchange="validateTime(); updateNextDateFromStart()" oninput="validateTime(); updateNextDateFromStart()"></div>
+      </div>
+      <div class="mode-hint">单次提醒：直接设置提醒日期和提醒时间，到点只提醒一次。</div>
     </div>
 
    <div id="lunarFields" style="display:none;">
@@ -469,30 +474,24 @@ function getDashboardPage() {
      <div class="mode-hint" style="margin-bottom:10px;">
     只有开始日期本身是“闰X月”时才勾选；普通农历生日不要勾选。
    </div>
-
-  <div class="lunar-display" id="lunarNextDisplay">📅 农历周期后对应公历提醒日期：--</div>
 </div>
 
-    <div class="form-row">
-      <div><label>提醒日期（公历）</label><input type="date" id="reminderDate" onchange="showLunar()"></div>
-      <div><label>提醒时间（北京时间）</label><input type="time" id="remindTime" value="08:00" step="60" onchange="validateTime()" oninput="validateTime()"></div>
-    </div>
+    <input type="hidden" id="reminderDate">
+    <input type="hidden" id="remindTime" value="08:00">
     <div id="timeError" class="time-error">⚠️ 提醒分钟必须是检测间隔的倍数</div>
-    <div class="lunar-display" id="lunarDisplay">农历：--</div>
-    <div style="margin-bottom:12px;">
-      <span class="next-date-display" id="nextDateDisplay">📅 提醒日：未计算</span>
-      <span class="reverse-hint" onclick="reverseCalculate()">🔄 点击提醒日期反向计算</span>
-    </div>
     
-    <div style="margin: 8px 0 14px 0;">
+    <div id="autoRenewBlock" style="margin: 8px 0 14px 0;">
       <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
         <input type="checkbox" id="autoRenew" style="width:auto; margin:0;"> 到提醒日后自动续订
       </label>
       <div class="mode-hint">自动续订：到提醒日期后，以当前提醒日为基准计算下一周期；手动续订仍然从当前日期重新开始。</div>
     </div>
+
     <label>提前提醒（点击 ➕ 添加多组，单位：天/小时）</label>
     <div id="reminderDaysContainer"></div>
     <button class="btn-primary btn-sm" onclick="addReminderGroup()">➕ 添加一组</button>
+
+    <div class="reminder-preview" id="reminderPreview">📅 提醒日：未计算</div>
 
     <label>备注</label><textarea id="remark" rows="2"></textarea>
 
@@ -788,6 +787,15 @@ function showToast(msg, type) {
   t._timer = setTimeout(() => t.classList.remove('show'), 3000);
 }
 
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function closeModal(id) {
   document.getElementById(id).classList.remove('show');
 }
@@ -834,36 +842,7 @@ function addDays(dateStr, days) {
 
 // ===== 农历显示 =====
 function showLunar() {
-  const dateInput = document.getElementById('reminderDate');
-
-  if (!dateInput.value) {
-    document.getElementById('lunarDisplay').textContent = '农历：--';
-    return;
-  }
-
-  const parts = dateInput.value.split('-');
-  const result = LunarCalendar.solarToLunar(
-    parseInt(parts[0]),
-    parseInt(parts[1]),
-    parseInt(parts[2])
-  );
-
-  if (result) {
-    document.getElementById('lunarDisplay').textContent =
-      '农历：' +
-      result.lunarYear +
-      '年 ' +
-      result.monthName +
-      '月 ' +
-      result.dayName +
-      '（' +
-      result.ganZhi +
-      '年 ' +
-      result.animal +
-      '年）';
-  } else {
-    document.getElementById('lunarDisplay').textContent = '农历：不支持';
-  }
+  updateReminderPreview();
 }
 
 function getNextCheckTime() {
@@ -903,22 +882,28 @@ async function fetchInterval() {
 }
 
 function validateTime() {
-  const timeInput = document.getElementById('remindTime');
+  const mode = document.getElementById('taskMode').value;
+  const timeInput = mode === 'countdown'
+    ? document.getElementById('singleReminderTime')
+    : document.getElementById('startTime');
+  const hiddenTime = document.getElementById('remindTime');
   const errorEl = document.getElementById('timeError');
   const saveBtn = document.getElementById('saveTaskBtn');
 
-  if (!timeInput.value) {
+  if (!timeInput || !timeInput.value) {
     errorEl.style.display = 'none';
     saveBtn.disabled = false;
     return;
   }
+
+  if (hiddenTime) hiddenTime.value = timeInput.value;
 
   const parts = timeInput.value.split(':');
   const minute = parseInt(parts[1]);
 
   if (minute % checkInterval !== 0) {
     errorEl.style.display = 'block';
-    errorEl.textContent = '⚠️ 提醒分钟必须是 ' + checkInterval + ' 的倍数（当前 ' + minute + '）';
+    errorEl.textContent = '⚠️ 提醒分钟必须是 ' + checkInterval + ' 的倍数（当前 ' + minute + '）。建议选择 00、05、10、15、20、25、30、35、40、45、50、55 这种检测点。';
     saveBtn.disabled = true;
   } else {
     errorEl.style.display = 'none';
@@ -936,6 +921,10 @@ function toggleModeFields() {
   document.getElementById('countdownFields').style.display = (mode === 'countdown') ? 'block' : 'none';
   document.getElementById('lunarFields').style.display = useLunar ? 'block' : 'none';
 
+  const autoRenewBlock = document.getElementById('autoRenewBlock');
+  if (autoRenewBlock) autoRenewBlock.style.display = isPeriodic ? 'block' : 'none';
+  if (!isPeriodic) document.getElementById('autoRenew').checked = false;
+
   const solarDateRow = document.getElementById('solarDateRow');
   if (solarDateRow) {
     solarDateRow.style.display = (isPeriodic && !useLunar) ? 'block' : 'none';
@@ -943,9 +932,9 @@ function toggleModeFields() {
 
   const hints = {
     periodic: useLunar
-      ? '周期模式：使用农历日期，系统自动换算成对应公历提醒日期'
-      : '周期模式：设置公历开始日期和周期',
-    countdown: '倒数日模式：设置间隔天数'
+      ? '周期模式：使用农历日期和开始时间，系统自动换算成对应公历提醒日期'
+      : '周期模式：设置公历开始日期、开始时间和周期',
+    countdown: '单次提醒：直接设置提醒日期和提醒时间，到点只提醒一次'
   };
 
   document.getElementById('modeHint').textContent = hints[mode] || '';
@@ -957,6 +946,8 @@ function toggleModeFields() {
   } else {
     updateNextDateFromStart();
   }
+
+  validateTime();
 }
 
 function toggleCalendarFields() {
@@ -1008,6 +999,153 @@ function formatDateObjLocal(d) {
   return d.getUTCFullYear() + '-' +
     String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
     String(d.getUTCDate()).padStart(2, '0');
+}
+
+function parseDateTimeLocalFrontend(dateStr, timeStr) {
+  const dateParts = dateStr.split('-').map(Number);
+  const timeParts = (timeStr || '08:00').split(':').map(Number);
+  return new Date(Date.UTC(
+    dateParts[0],
+    dateParts[1] - 1,
+    dateParts[2],
+    timeParts[0] || 0,
+    timeParts[1] || 0,
+    0
+  ));
+}
+
+function formatTimeObjLocal(d) {
+  return String(d.getUTCHours()).padStart(2, '0') + ':' +
+    String(d.getUTCMinutes()).padStart(2, '0');
+}
+
+function daysInUtcMonth(year, monthIndex) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function addMonthsClampedFrontend(d, months) {
+  const day = d.getUTCDate();
+  const targetMonth = d.getUTCMonth() + months;
+  const result = new Date(d.getTime());
+
+  result.setUTCDate(1);
+  result.setUTCMonth(targetMonth);
+  result.setUTCDate(Math.min(day, daysInUtcMonth(result.getUTCFullYear(), result.getUTCMonth())));
+
+  return result;
+}
+
+function addYearsClampedFrontend(d, years) {
+  const day = d.getUTCDate();
+  const result = new Date(d.getTime());
+
+  result.setUTCDate(1);
+  result.setUTCFullYear(result.getUTCFullYear() + years);
+  result.setUTCDate(Math.min(day, daysInUtcMonth(result.getUTCFullYear(), result.getUTCMonth())));
+
+  return result;
+}
+
+function addPeriodToDateTimeFrontend(d, value, unit) {
+  const result = new Date(d.getTime());
+
+  switch (unit) {
+    case 'hour':
+      result.setUTCHours(result.getUTCHours() + value);
+      return result;
+    case 'day':
+      result.setUTCDate(result.getUTCDate() + value);
+      return result;
+    case 'week':
+      result.setUTCDate(result.getUTCDate() + value * 7);
+      return result;
+    case 'month':
+      return addMonthsClampedFrontend(result, value);
+    case 'year':
+      return addYearsClampedFrontend(result, value);
+    default:
+      return result;
+  }
+}
+
+function getBeijingNowMs() {
+  return Date.now();
+}
+
+function formatSolarDisplay(dateStr, timeStr) {
+  if (!dateStr) return '公历：--';
+  const parts = dateStr.split('-').map(Number);
+  return '公历：' + parts[0] + '年' + String(parts[1]).padStart(2, '0') + '月' +
+    String(parts[2]).padStart(2, '0') + '日 ' + (timeStr || '08:00');
+}
+
+function formatLunarDisplay(dateStr, timeStr) {
+  if (!dateStr) return '农历：--';
+  const parts = dateStr.split('-').map(Number);
+  const lunar = LunarCalendar.solarToLunar(parts[0], parts[1], parts[2]);
+
+  if (!lunar) return '农历：不支持';
+
+  return '农历：' + lunar.lunarYear + '年 ' + lunar.monthName + '月 ' +
+    lunar.dayName + ' ' + (timeStr || '08:00');
+}
+
+function calcAdvanceDateTime(dateStr, timeStr, value, unit) {
+  const d = parseDateTimeLocalFrontend(dateStr, timeStr);
+
+  if (unit === 'hour') {
+    d.setUTCHours(d.getUTCHours() - value);
+  } else {
+    d.setUTCDate(d.getUTCDate() - value);
+  }
+
+  return {
+    date: formatDateObjLocal(d),
+    time: formatTimeObjLocal(d),
+    ms: new Date(formatDateObjLocal(d) + 'T' + formatTimeObjLocal(d) + ':00+08:00').getTime()
+  };
+}
+
+function getReminderPreviewText() {
+  const dateStr = document.getElementById('reminderDate').value;
+  const timeStr = document.getElementById('remindTime').value || '08:00';
+
+  if (!dateStr) return '📅 提醒日：未计算';
+
+  const dueMs = new Date(dateStr + 'T' + timeStr + ':00+08:00').getTime();
+  const nowMs = getBeijingNowMs();
+  let lines = [];
+
+  lines.push('📅 到期提醒：');
+  lines.push(formatSolarDisplay(dateStr, timeStr));
+  lines.push(formatLunarDisplay(dateStr, timeStr));
+
+  if (dueMs <= nowMs) {
+    lines.push('⚠️ 到期提醒时间已经过去，请重新选择');
+  }
+
+  const groups = getReminderGroups();
+
+  groups.forEach((g, index) => {
+    const adv = calcAdvanceDateTime(dateStr, timeStr, g.value, g.unit || 'day');
+    const unitText = (g.unit || 'day') === 'hour' ? '小时' : '天';
+
+    lines.push('');
+    lines.push('⏰ 提前提醒 ' + (index + 1) + '：提前 ' + g.value + unitText);
+    lines.push(formatSolarDisplay(adv.date, adv.time));
+    lines.push(formatLunarDisplay(adv.date, adv.time));
+
+    if (adv.ms <= nowMs) {
+      lines.push('⚠️ 该提前提醒时间已过去，不会推送');
+    }
+  });
+
+  return lines.join('\\n');
+}
+
+function updateReminderPreview() {
+  const preview = document.getElementById('reminderPreview');
+  if (preview) preview.textContent = getReminderPreviewText();
 }
 
 function formatSolarObj(solar) {
@@ -1110,36 +1248,40 @@ function updateLunarNext() {
 
   const periodValue = parseInt(document.getElementById('periodValue').value) || 1;
   const periodUnit = document.getElementById('periodUnit').value || 'year';
+  const startTime = document.getElementById('startTime').value || '08:00';
 
   if (!isValidLunarDate(year, month, day, isLeap)) {
-    document.getElementById('lunarNextDisplay').textContent =
-      '📅 农历周期后对应公历提醒日期：无效农历日期，请检查是否误勾选闰月';
     document.getElementById('reminderDate').value = '';
-    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：未计算';
-    showLunar();
+    document.getElementById('remindTime').value = startTime;
+    updateReminderPreview();
     return;
   }
 
   const startSolar = LunarCalendar.lunarToSolar(year, month, day, isLeap);
-  const nextDate = calcLunarPeriodicNextDate(year, month, day, isLeap, periodValue, periodUnit);
+  let nextDate = null;
+  let nextTime = startTime;
 
-  if (startSolar && nextDate) {
-    const startDateStr = formatSolarObj(startSolar);
-
-    document.getElementById('lunarNextDisplay').textContent =
-      '📅 农历开始日期对应公历：' + startDateStr +
-      '；周期后提醒日：' + nextDate;
-
-    document.getElementById('reminderDate').value = nextDate;
-    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：' + nextDate;
-    showLunar();
-  } else {
-    document.getElementById('lunarNextDisplay').textContent =
-      '📅 农历周期后对应公历提醒日期：无法计算';
-    document.getElementById('reminderDate').value = '';
-    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：未计算';
-    showLunar();
+  if (startSolar) {
+    if (periodUnit === 'hour' || periodUnit === 'day' || periodUnit === 'week') {
+      const base = parseDateTimeLocalFrontend(formatSolarObj(startSolar), startTime);
+      const next = addPeriodToDateTimeFrontend(base, periodValue, periodUnit);
+      nextDate = formatDateObjLocal(next);
+      nextTime = formatTimeObjLocal(next);
+    } else {
+      nextDate = calcLunarPeriodicNextDate(year, month, day, isLeap, periodValue, periodUnit);
+      nextTime = startTime;
+    }
   }
+
+  if (nextDate) {
+    document.getElementById('reminderDate').value = nextDate;
+    document.getElementById('remindTime').value = nextTime;
+  } else {
+    document.getElementById('reminderDate').value = '';
+    document.getElementById('remindTime').value = startTime;
+  }
+
+  updateReminderPreview();
 }
 function updateNextDateFromStart() {
   const mode = document.getElementById('taskMode').value;
@@ -1151,114 +1293,39 @@ function updateNextDateFromStart() {
   }
 
   let nextDate = null;
+  let nextTime = null;
 
   if (mode === 'periodic') {
     const start = document.getElementById('startDate').value;
+    const startTime = document.getElementById('startTime').value || '08:00';
     const val = parseInt(document.getElementById('periodValue').value);
     const unit = document.getElementById('periodUnit').value;
 
     if (start && val > 0) {
-      const d = parseDateLocalFrontend(start);
+      const base = parseDateTimeLocalFrontend(start, startTime);
+      const next = addPeriodToDateTimeFrontend(base, val, unit);
 
-      switch (unit) {
-        case 'day':
-          d.setUTCDate(d.getUTCDate() + val);
-          break;
-        case 'week':
-          d.setUTCDate(d.getUTCDate() + val * 7);
-          break;
-        case 'month':
-          d.setUTCMonth(d.getUTCMonth() + val);
-          break;
-        case 'year':
-          d.setUTCFullYear(d.getUTCFullYear() + val);
-          break;
-      }
-
-      nextDate = formatDateObjLocal(d);
+      nextDate = formatDateObjLocal(next);
+      nextTime = formatTimeObjLocal(next);
     }
   } else {
-    const days = parseInt(document.getElementById('countdownDays').value);
-
-    if (days > 0) {
-      const today = parseDateLocalFrontend(formatDateBeijing(new Date()));
-      today.setUTCDate(today.getUTCDate() + days);
-      nextDate = formatDateObjLocal(today);
-    }
+    nextDate = document.getElementById('singleReminderDate').value;
+    nextTime = document.getElementById('singleReminderTime').value || '08:00';
   }
 
   if (nextDate) {
     document.getElementById('reminderDate').value = nextDate;
-    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：' + nextDate;
+    document.getElementById('remindTime').value = nextTime || '08:00';
   } else {
     document.getElementById('reminderDate').value = '';
-    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：未计算';
+    document.getElementById('remindTime').value = nextTime || '08:00';
   }
 
-  showLunar();
+  updateReminderPreview();
 }
 
 function reverseCalculate() {
-  const mode = document.getElementById('taskMode').value;
-  const lunarCheckbox = document.getElementById('calendarLunar');
-
-  if (mode === 'periodic' && lunarCheckbox && lunarCheckbox.checked) {
-    showToast('农历日期由农历月/日自动换算，暂不支持反向计算', 'error');
-    return;
-  }
-
-  const reminderDate = document.getElementById('reminderDate').value;
-
-  if (!reminderDate) {
-    showToast('请先选择提醒日期', 'error');
-    return;
-  }
-
-  if (mode === 'periodic') {
-    const val = parseInt(document.getElementById('periodValue').value);
-    const unit = document.getElementById('periodUnit').value;
-
-    if (!val || val < 1) {
-      showToast('请输入有效的周期数值', 'error');
-      return;
-    }
-
-    const d = parseDateLocalFrontend(reminderDate);
-
-    switch (unit) {
-      case 'day':
-        d.setUTCDate(d.getUTCDate() - val);
-        break;
-      case 'week':
-        d.setUTCDate(d.getUTCDate() - val * 7);
-        break;
-      case 'month':
-        d.setUTCMonth(d.getUTCMonth() - val);
-        break;
-      case 'year':
-        d.setUTCFullYear(d.getUTCFullYear() - val);
-        break;
-    }
-
-    const start = formatDateObjLocal(d);
-    document.getElementById('startDate').value = start;
-    showToast('已反算开始日期：' + start);
-  } else {
-    const today = parseDateLocalFrontend(formatDateBeijing(new Date()));
-    const remind = parseDateLocalFrontend(reminderDate);
-    const diffTime = remind.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays < 1) {
-      showToast('提醒日必须在今天之后', 'error');
-      return;
-    }
-
-    document.getElementById('countdownDays').value = diffDays;
-    showToast('已计算间隔天数：' + diffDays);
-  }
-
-  updateNextDateFromStart();
+  showToast('当前版本已取消反向计算，请直接修改开始日期/时间或单次提醒时间', 'error');
 }
 
 // ===== 提醒组 =====
@@ -1275,22 +1342,28 @@ function addReminderGroup(value, unit) {
   input.placeholder = '例如 3';
   if (value) input.value = value;
   input.required = true;
+  input.oninput = updateReminderPreview;
+  input.onchange = updateReminderPreview;
 
   const select = document.createElement('select');
   select.innerHTML = '<option value="day">天</option><option value="hour">小时</option>';
   if (unit) select.value = unit;
+  select.onchange = updateReminderPreview;
 
   const delBtn = document.createElement('button');
   delBtn.textContent = '✕';
   delBtn.className = 'btn-danger btn-sm';
   delBtn.onclick = function() {
     div.remove();
+    updateReminderPreview();
   };
 
   div.appendChild(input);
   div.appendChild(select);
   div.appendChild(delBtn);
   container.appendChild(div);
+
+  updateReminderPreview();
 }
 
 function loadReminderGroups(groups) {
@@ -1298,11 +1371,11 @@ function loadReminderGroups(groups) {
   container.innerHTML = '';
   reminderGroupCounter = 0;
 
-  if (!groups || groups.length === 0) {
-    addReminderGroup(3, 'day');
-  } else {
+  if (groups && groups.length > 0) {
     groups.forEach(g => addReminderGroup(g.value, g.unit || 'day'));
   }
+
+  updateReminderPreview();
 }
 
 function getReminderGroups() {
@@ -1364,34 +1437,47 @@ async function loadTasks() {
         const nextDate = new Date(t.nextReminder + 'T' + (t.remindTime || '08:00') + ':00+08:00');
         const isExpired = nextDate < now;
         const unitMap = {
+          hour: '小时',
           day: '日',
           week: '周',
           month: '月',
           year: '年'
         };
         const isLunarPeriodic = t.calendarType === 'lunar' || t.mode === 'lunar';
-        const modeLabel = t.mode === 'countdown' ? '倒数日' : (isLunarPeriodic ? '周期/农历' : '周期');
+        const isSingle = t.mode === 'countdown';
+        const modeLabel = isSingle ? '单次提醒' : (isLunarPeriodic ? '周期/农历' : '周期');
         const reminderStr = (t.reminderDays || []).map((g, i) => {
           const u = t.reminderUnits && t.reminderUnits[i] ? t.reminderUnits[i] : 'day';
           return g + (u === 'hour' ? '小时' : '天');
         }).join(', ') || '无';
 
-        let lunarInfoStr = '';
-        if (isLunarPeriodic && t.lunarMonth && t.lunarDay) {
-          lunarInfoStr = '农历 ' + t.lunarMonth + '月' + t.lunarDay + '日' + (t.lunarLeap ? '（闰月）' : '');
+        let ruleStr = '单次提醒';
+        if (!isSingle) {
+          if (isLunarPeriodic && t.lunarMonth && t.lunarDay) {
+            ruleStr = '农历 ' + t.lunarMonth + '月' + t.lunarDay + '日' + (t.lunarLeap ? '（闰月）' : '') + ' / 每 ' + (t.periodValue || 1) + ' ' + unitMap[t.periodUnit || 'year'];
+          } else {
+            ruleStr = '每 ' + (t.periodValue || 1) + ' ' + unitMap[t.periodUnit || 'month'];
+          }
         }
 
+        const startInfo = isSingle
+          ? '—'
+          : ((isLunarPeriodic ? '农历日期' : formatDate(t.startDate)) + ' ' + (t.startTime || t.remindTime || '08:00'));
+        const renewBtn = isSingle
+          ? ''
+          : '<button class="btn-success btn-sm" onclick="renewTask(\\'' + t.id + '\\')">🔄 续订</button>';
+
         return '<div class="task-card" style="border-left-color:' + (isExpired ? '#e74c3c' : '#2ecc71') + '">' +
-          '<div class="title">' + t.name + ' <span style="font-size:12px;color:#999;">[' + modeLabel + ']</span></div>' +
-          '<div class="info"><strong>周期/倒数：</strong>' + (t.mode === 'countdown' ? '每 ' + t.countdownDays + ' 天' : (isLunarPeriodic ? lunarInfoStr : '每 ' + t.periodValue + ' ' + unitMap[t.periodUnit])) + '</div>' +
-          '<div class="info"><strong>开始/基准：</strong>' + (t.mode === 'countdown' ? '（从今天起）' : (isLunarPeriodic ? '（农历日期）' : formatDate(t.startDate))) + '</div>' +
-          '<div class="info"><strong>提醒日：</strong>' + formatDate(t.nextReminder) + ' ' + (t.remindTime || '08:00') + '</div>' +
+          '<div class="title">' + escapeHtml(t.name) + ' <span style="font-size:12px;color:#999;">[' + modeLabel + ']</span></div>' +
+          '<div class="info"><strong>规则：</strong>' + ruleStr + '</div>' +
+          '<div class="info"><strong>开始/基准：</strong>' + startInfo + '</div>' +
+          '<div class="info"><strong>提醒日：</strong>' + formatSolarDisplay(t.nextReminder, t.remindTime || '08:00') + '</div>' +
           '<div class="info"><strong>提前提醒：</strong>' + reminderStr + '</div>' +
           '<div class="info"><strong>自动续订：</strong>' + (t.autoRenew ? '✅ 开启' : '—') + '</div>' +
-          '<div class="info"><strong>备注：</strong>' + (t.remark || '-') + '</div>' +
+          '<div class="info"><strong>备注：</strong>' + escapeHtml(t.remark || '-') + '</div>' +
           '<span class="status ' + (isExpired ? 'status-expired' : 'status-active') + '">' + (isExpired ? '⚠️ 已过期' : '✅ 进行中') + '</span>' +
           '<div class="actions">' +
-          '<button class="btn-success btn-sm" onclick="renewTask(\\'' + t.id + '\\')">🔄 续订</button>' +
+          renewBtn +
           '<button class="btn-primary btn-sm" onclick="editTask(\\'' + t.id + '\\')">✏️ 编辑</button>' +
           '<button class="btn-history btn-sm" onclick="viewHistory(\\'' + t.id + '\\')">📜 历史</button>' +
           '<button class="btn-warning btn-sm" onclick="testTask(\\'' + t.id + '\\')">📤 测试</button>' +
@@ -1450,14 +1536,19 @@ function openAddModal() {
   document.getElementById('lunarDay').value = '1';
   document.getElementById('lunarLeap').checked = false;
 
-  document.getElementById('startDate').value = formatDateBeijing(new Date());
+  const today = formatDateBeijing(new Date());
+
+  document.getElementById('startDate').value = today;
+  document.getElementById('startTime').value = '08:00';
+  document.getElementById('singleReminderDate').value = today;
+  document.getElementById('singleReminderTime').value = '08:00';
+  document.getElementById('reminderDate').value = '';
+  document.getElementById('remindTime').value = '08:00';
   document.getElementById('periodValue').value = '1';
   document.getElementById('periodUnit').value = 'month';
-  document.getElementById('countdownDays').value = '30';
-  document.getElementById('remindTime').value = '08:00';
   document.getElementById('remark').value = '';
 
-  loadReminderGroups([{ value: 3, unit: 'day' }]);
+  loadReminderGroups([]);
   toggleModeFields();
   updateNextDateFromStart();
   validateTime();
@@ -1474,21 +1565,27 @@ async function editTask(id) {
   }
 
   const isLunarPeriodic = t.calendarType === 'lunar' || t.mode === 'lunar';
+  const isSingle = t.mode === 'countdown';
 
   document.getElementById('taskModalTitle').textContent = '编辑任务';
   document.getElementById('editId').value = id;
   document.getElementById('taskName').value = t.name;
-  document.getElementById('autoRenew').checked = !!t.autoRenew;
-  document.getElementById('taskMode').value = (t.mode === 'lunar') ? 'periodic' : (t.mode || 'periodic');
+  document.getElementById('autoRenew').checked = isSingle ? false : !!t.autoRenew;
+  document.getElementById('taskMode').value = isSingle ? 'countdown' : 'periodic';
+  document.getElementById('reminderDate').value = t.nextReminder || '';
   document.getElementById('remindTime').value = t.remindTime || '08:00';
 
   const lunarCheckbox = document.getElementById('calendarLunar');
-  if (lunarCheckbox) lunarCheckbox.checked = isLunarPeriodic;
+  if (lunarCheckbox) lunarCheckbox.checked = isLunarPeriodic && !isSingle;
 
-  if (t.mode === 'countdown') {
-    document.getElementById('countdownDays').value = t.countdownDays || 30;
+  if (isSingle) {
+    document.getElementById('singleReminderDate').value = t.nextReminder || formatDateBeijing(new Date());
+    document.getElementById('singleReminderTime').value = t.remindTime || '08:00';
+    document.getElementById('startDate').value = t.startDate || formatDateBeijing(new Date());
+    document.getElementById('startTime').value = t.startTime || t.remindTime || '08:00';
   } else {
     document.getElementById('startDate').value = t.startDate || formatDateBeijing(new Date());
+    document.getElementById('startTime').value = t.startTime || t.remindTime || '08:00';
     document.getElementById('periodValue').value = t.periodValue || 1;
     document.getElementById('periodUnit').value = t.periodUnit || (isLunarPeriodic ? 'year' : 'month');
 
@@ -1515,8 +1612,8 @@ async function editTask(id) {
 
   if (t.nextReminder) {
     document.getElementById('reminderDate').value = t.nextReminder;
-    document.getElementById('nextDateDisplay').textContent = '📅 提醒日：' + t.nextReminder;
-    showLunar();
+    document.getElementById('remindTime').value = t.remindTime || '08:00';
+    updateReminderPreview();
   } else {
     updateNextDateFromStart();
   }
@@ -1528,20 +1625,27 @@ async function saveTask() {
   const id = document.getElementById('editId').value;
   const name = document.getElementById('taskName').value.trim();
   const mode = document.getElementById('taskMode').value;
-  const remindTime = document.getElementById('remindTime').value || '08:00';
   const remark = document.getElementById('remark').value.trim();
-  const autoRenew = document.getElementById('autoRenew').checked;
   const reminderGroups = getReminderGroups();
   const lunarCheckbox = document.getElementById('calendarLunar');
   const useLunarCalendar = mode === 'periodic' && lunarCheckbox && lunarCheckbox.checked;
+
+  validateTime();
+
+  if (document.getElementById('saveTaskBtn').disabled) return;
 
   if (!name) {
     showToast('请输入名称', 'error');
     return;
   }
 
-  if (reminderGroups.length === 0) {
-    showToast('请至少添加一组提前提醒', 'error');
+  updateNextDateFromStart();
+
+  const nextReminder = document.getElementById('reminderDate').value;
+  const remindTime = document.getElementById('remindTime').value || '08:00';
+
+  if (!nextReminder) {
+    showToast('无法计算提醒时间，请检查日期设置', 'error');
     return;
   }
 
@@ -1551,20 +1655,28 @@ async function saveTask() {
     return;
   }
 
+  const dueMs = new Date(nextReminder + 'T' + remindTime + ':00+08:00').getTime();
+  if (dueMs <= Date.now()) {
+    showToast('提醒时间已经过去，请重新选择', 'error');
+    return;
+  }
+
   let body = {
     name,
-    autoRenew,
+    autoRenew: mode === 'periodic' ? document.getElementById('autoRenew').checked : false,
     mode,
     calendarType: useLunarCalendar ? 'lunar' : 'solar',
     remindTime,
     remark,
     reminderDays: reminderGroups.map(g => g.value),
-    reminderUnits: reminderGroups.map(g => g.unit)
+    reminderUnits: reminderGroups.map(g => g.unit),
+    nextReminder
   };
 
   if (mode === 'periodic') {
     const periodValue = parseInt(document.getElementById('periodValue').value);
     const periodUnit = document.getElementById('periodUnit').value;
+    const startTime = document.getElementById('startTime').value || '08:00';
 
     if (!periodValue || periodValue < 1) {
       showToast('周期必须>0', 'error');
@@ -1573,38 +1685,31 @@ async function saveTask() {
 
     body.periodValue = periodValue;
     body.periodUnit = periodUnit;
+    body.startTime = startTime;
 
     if (useLunarCalendar) {
       const lunarYear = parseInt(document.getElementById('lunarYear').value);
       const lunarMonth = parseInt(document.getElementById('lunarMonth').value);
       const lunarDay = parseInt(document.getElementById('lunarDay').value);
       const lunarLeap = document.getElementById('lunarLeap').checked;
-      
+
       body.lunarYear = lunarYear;
       body.lunarMonth = lunarMonth;
       body.lunarDay = lunarDay;
       body.lunarLeap = lunarLeap;
+
       if (!isValidLunarDate(lunarYear, lunarMonth, lunarDay, lunarLeap)) {
         showToast('无效农历日期：只有开始日期本身是“闰X月”时才勾选；普通农历生日不要勾选。', 'error');
         return;
       }
+
       const startSolar = LunarCalendar.lunarToSolar(lunarYear, lunarMonth, lunarDay, lunarLeap);
-      const nextDate = calcLunarPeriodicNextDate(
-        lunarYear,
-        lunarMonth,
-        lunarDay,
-        lunarLeap,
-        periodValue,
-        periodUnit
-      );
-      
-      if (!startSolar || !nextDate) {
-        showToast('无法计算农历周期提醒日期，请检查年份、日期、周期或闰月设置', 'error');
+      if (!startSolar) {
+        showToast('无法计算农历开始日期，请检查年份、日期或闰月设置', 'error');
         return;
       }
-      
+
       body.startDate = formatSolarObj(startSolar);
-      body.nextReminder = nextDate;
     } else {
       const startDate = document.getElementById('startDate').value;
 
@@ -1614,42 +1719,23 @@ async function saveTask() {
       }
 
       body.startDate = startDate;
-
-      const d = parseDateLocalFrontend(startDate);
-
-      switch (periodUnit) {
-        case 'day':
-          d.setUTCDate(d.getUTCDate() + periodValue);
-          break;
-        case 'week':
-          d.setUTCDate(d.getUTCDate() + periodValue * 7);
-          break;
-        case 'month':
-          d.setUTCMonth(d.getUTCMonth() + periodValue);
-          break;
-        case 'year':
-          d.setUTCFullYear(d.getUTCFullYear() + periodValue);
-          break;
-      }
-
-      body.nextReminder = formatDateObjLocal(d);
+      body.lunarYear = null;
       body.lunarMonth = null;
       body.lunarDay = null;
       body.lunarLeap = false;
     }
   } else if (mode === 'countdown') {
-    const days = parseInt(document.getElementById('countdownDays').value);
-
-    if (!days || days < 1) {
-      showToast('间隔天数必须>0', 'error');
-      return;
-    }
-
-    body.countdownDays = days;
     body.calendarType = 'solar';
-
-    const today = formatDateBeijing(new Date());
-    body.nextReminder = addDays(today, days);
+    body.autoRenew = false;
+    body.startDate = null;
+    body.startTime = null;
+    body.periodValue = null;
+    body.periodUnit = null;
+    body.countdownDays = null;
+    body.lunarYear = null;
+    body.lunarMonth = null;
+    body.lunarDay = null;
+    body.lunarLeap = false;
   }
 
   const url = id ? '/api/tasks/' + id : '/api/tasks';
@@ -1664,8 +1750,8 @@ async function saveTask() {
   const data = await resp.json();
 
   if (data.success) {
+    showToast(id ? '修改成功' : '创建成功');
     closeModal('taskModal');
-    showToast('保存成功');
     loadTasks();
   } else {
     showToast(data.message || '保存失败', 'error');
@@ -2007,6 +2093,81 @@ function formatDateBeijingForWorker(d) {
     String(bj.getUTCDate()).padStart(2, '0');
 }
 
+function formatTimeBeijingForWorker(d) {
+  const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+
+  return String(bj.getUTCHours()).padStart(2, '0') + ':' +
+    String(bj.getUTCMinutes()).padStart(2, '0');
+}
+
+function parseDateTimeLocal(dateStr, timeStr) {
+  const dateParts = dateStr.split('-').map(Number);
+  const timeParts = (timeStr || '08:00').split(':').map(Number);
+
+  return new Date(Date.UTC(
+    dateParts[0],
+    dateParts[1] - 1,
+    dateParts[2],
+    timeParts[0] || 0,
+    timeParts[1] || 0,
+    0
+  ));
+}
+
+function formatTimeLocal(d) {
+  return String(d.getUTCHours()).padStart(2, '0') + ':' +
+    String(d.getUTCMinutes()).padStart(2, '0');
+}
+
+function daysInUtcMonthForWorker(year, monthIndex) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function addMonthsClampedForWorker(d, months) {
+  const day = d.getUTCDate();
+  const targetMonth = d.getUTCMonth() + months;
+  const result = new Date(d.getTime());
+
+  result.setUTCDate(1);
+  result.setUTCMonth(targetMonth);
+  result.setUTCDate(Math.min(day, daysInUtcMonthForWorker(result.getUTCFullYear(), result.getUTCMonth())));
+
+  return result;
+}
+
+function addYearsClampedForWorker(d, years) {
+  const day = d.getUTCDate();
+  const result = new Date(d.getTime());
+
+  result.setUTCDate(1);
+  result.setUTCFullYear(result.getUTCFullYear() + years);
+  result.setUTCDate(Math.min(day, daysInUtcMonthForWorker(result.getUTCFullYear(), result.getUTCMonth())));
+
+  return result;
+}
+
+function addPeriodToDateTimeForWorker(d, value, unit) {
+  const result = new Date(d.getTime());
+
+  switch (unit) {
+    case 'hour':
+      result.setUTCHours(result.getUTCHours() + value);
+      return result;
+    case 'day':
+      result.setUTCDate(result.getUTCDate() + value);
+      return result;
+    case 'week':
+      result.setUTCDate(result.getUTCDate() + value * 7);
+      return result;
+    case 'month':
+      return addMonthsClampedForWorker(result, value);
+    case 'year':
+      return addYearsClampedForWorker(result, value);
+    default:
+      return result;
+  }
+}
+
 function makeRemindDateTime(task) {
   return new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00');
 }
@@ -2030,17 +2191,23 @@ function getRetryWindowMinutes(config) {
 
 
 async function shouldRunScheduledCheck(kv, interval, scheduledTime) {
-  const key = 'scheduler_last_check';
   const nowMs = Number(scheduledTime) || Date.now();
-  const minElapsed = Math.max(1, interval) * 60 * 1000;
+  const scheduled = new Date(nowMs);
+  const minute = scheduled.getUTCMinutes();
+  const safeInterval = Math.max(1, Math.min(60, parseInt(interval) || 5));
+
+  // 按标准分钟点执行：5 分钟就是 00、05、10、15...
+  // 使用 scheduledTime，避免 Cloudflare 实际启动晚几秒导致错过检测点。
+  if (minute % safeInterval !== 0) return false;
+
+  const slotKey = 'scheduler_slot_' + Math.floor(nowMs / 60000);
 
   try {
-    const raw = await kv.get(key);
-    const lastMs = Number(raw) || 0;
-    if (lastMs > 0 && nowMs - lastMs < minElapsed - 5000) return false;
+    const existed = await kv.get(slotKey);
+    if (existed) return false;
   } catch (e) {}
 
-  await kv.put(key, String(nowMs), { expirationTtl: 2 * 24 * 60 * 60 });
+  await kv.put(slotKey, '1', { expirationTtl: 2 * 24 * 60 * 60 });
   return true;
 }
 
@@ -2130,9 +2297,22 @@ function calcLunarPeriodicNextDateForWorker(lunarYear, lunarMonth, lunarDay, lun
 function calcNextFromReminderDate(task) {
   if (!task || !task.nextReminder) return null;
 
+  const val = parseInt(task.periodValue) || 1;
+  const unit = task.periodUnit || 'month';
   const isLunarPeriodic = task.calendarType === 'lunar' || task.mode === 'lunar';
+  const currentTime = task.remindTime || '08:00';
 
   if (isLunarPeriodic) {
+    if (unit === 'hour' || unit === 'day' || unit === 'week') {
+      const d = parseDateTimeLocal(task.nextReminder, currentTime);
+      const next = addPeriodToDateTimeForWorker(d, val, unit);
+
+      return {
+        nextReminder: formatDateLocal(next),
+        remindTime: formatTimeLocal(next)
+      };
+    }
+
     const parts = task.nextReminder.split('-').map(Number);
 
     const currentLunar = LunarCalendar.solarToLunar(
@@ -2143,43 +2323,31 @@ function calcNextFromReminderDate(task) {
 
     if (!currentLunar) return null;
 
-    return calcLunarPeriodicNextDateForWorker(
+    const nextDate = calcLunarPeriodicNextDateForWorker(
       currentLunar.lunarYear,
       currentLunar.lunarMonth,
       currentLunar.lunarDay,
       currentLunar.isLeapMonth,
-      task.periodValue || 1,
-      task.periodUnit || 'year'
+      val,
+      unit || 'year'
     );
+
+    if (!nextDate) return null;
+
+    return {
+      nextReminder: nextDate,
+      remindTime: currentTime
+    };
   }
 
   if (task.mode === 'periodic') {
-    const d = parseDateLocal(task.nextReminder);
-    const val = parseInt(task.periodValue) || 1;
-    const unit = task.periodUnit || 'month';
+    const d = parseDateTimeLocal(task.nextReminder, currentTime);
+    const next = addPeriodToDateTimeForWorker(d, val, unit);
 
-    switch (unit) {
-      case 'day':
-        d.setUTCDate(d.getUTCDate() + val);
-        break;
-      case 'week':
-        d.setUTCDate(d.getUTCDate() + val * 7);
-        break;
-      case 'month':
-        d.setUTCMonth(d.getUTCMonth() + val);
-        break;
-      case 'year':
-        d.setUTCFullYear(d.getUTCFullYear() + val);
-        break;
-    }
-
-    return formatDateLocal(d);
-  }
-
-  if (task.mode === 'countdown') {
-    const d = parseDateLocal(task.nextReminder);
-    d.setUTCDate(d.getUTCDate() + (parseInt(task.countdownDays) || 1));
-    return formatDateLocal(d);
+    return {
+      nextReminder: formatDateLocal(next),
+      remindTime: formatTimeLocal(next)
+    };
   }
 
   return null;
@@ -2529,6 +2697,7 @@ export default {
         mode,
         calendarType,
         startDate,
+        startTime,
         periodValue,
         periodUnit,
         countdownDays,
@@ -2544,7 +2713,6 @@ export default {
       } = body;
 
       if (!name) return errorResponse('缺少任务名称', 400);
-      if (!reminderDays || reminderDays.length === 0) return errorResponse('至少需要一组提前提醒', 400);
 
       const interval = config.checkInterval || 5;
       const parts = (remindTime || '08:00').split(':');
@@ -2553,19 +2721,26 @@ export default {
         return errorResponse('提醒分钟必须是 ' + interval + ' 的倍数', 400);
       }
 
+      if (!nextReminder) return errorResponse('缺少提醒日期', 400);
+
+      if (new Date(nextReminder + 'T' + (remindTime || '08:00') + ':00+08:00').getTime() <= Date.now()) {
+        return errorResponse('提醒时间已经过去，请重新选择', 400);
+      }
+
       const task = {
         id: crypto.randomUUID(),
         name,
-        autoRenew: !!autoRenew,
+        autoRenew: (mode === 'countdown') ? false : !!autoRenew,
         mode: mode === 'lunar' ? 'periodic' : (mode || 'periodic'),
         calendarType: calendarType || (mode === 'lunar' ? 'lunar' : 'solar'),
         remindTime: remindTime || '08:00',
-        reminderDays: reminderDays.map(Number),
+        reminderDays: (reminderDays || []).map(Number),
         reminderUnits: reminderUnits || [],
         remark: remark || '',
         createdAt: new Date().toISOString(),
         nextReminder,
         startDate: startDate || null,
+        startTime: startTime || null,
         periodValue: periodValue || null,
         periodUnit: periodUnit || null,
         countdownDays: countdownDays || null,
@@ -2597,21 +2772,22 @@ export default {
       const body = await request.json();
 
       task.name = body.name || task.name;
-      task.autoRenew = body.autoRenew !== undefined ? !!body.autoRenew : !!task.autoRenew;
       task.mode = body.mode === 'lunar' ? 'periodic' : (body.mode || task.mode);
+      task.autoRenew = task.mode === 'countdown' ? false : (body.autoRenew !== undefined ? !!body.autoRenew : !!task.autoRenew);
       task.calendarType = body.calendarType || (body.mode === 'lunar' ? 'lunar' : (task.calendarType || 'solar'));
       task.remindTime = body.remindTime || '08:00';
       task.remark = body.remark || '';
       task.reminderDays = (body.reminderDays || []).map(Number);
       task.reminderUnits = body.reminderUnits || [];
       task.nextReminder = body.nextReminder || task.nextReminder;
-      task.startDate = body.startDate || task.startDate;
-      task.periodValue = body.periodValue || task.periodValue;
-      task.periodUnit = body.periodUnit || task.periodUnit;
-      task.countdownDays = body.countdownDays || task.countdownDays;
-      task.lunarYear = body.lunarYear || task.lunarYear;
-      task.lunarMonth = body.lunarMonth || task.lunarMonth;
-      task.lunarDay = body.lunarDay || task.lunarDay;
+      task.startDate = body.startDate !== undefined ? body.startDate : task.startDate;
+      task.startTime = body.startTime !== undefined ? body.startTime : task.startTime;
+      task.periodValue = body.periodValue !== undefined ? body.periodValue : task.periodValue;
+      task.periodUnit = body.periodUnit !== undefined ? body.periodUnit : task.periodUnit;
+      task.countdownDays = body.countdownDays !== undefined ? body.countdownDays : task.countdownDays;
+      task.lunarYear = body.lunarYear !== undefined ? body.lunarYear : task.lunarYear;
+      task.lunarMonth = body.lunarMonth !== undefined ? body.lunarMonth : task.lunarMonth;
+      task.lunarDay = body.lunarDay !== undefined ? body.lunarDay : task.lunarDay;
       task.lunarLeap = body.lunarLeap !== undefined ? body.lunarLeap : task.lunarLeap;
 
       const interval = config.checkInterval || 5;
@@ -2619,6 +2795,12 @@ export default {
 
       if (parseInt(parts[1]) % interval !== 0) {
         return errorResponse('提醒分钟必须是 ' + interval + ' 的倍数', 400);
+      }
+
+      if (!task.nextReminder) return errorResponse('缺少提醒日期', 400);
+
+      if (new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00').getTime() <= Date.now()) {
+        return errorResponse('提醒时间已经过去，请重新选择', 400);
       }
 
       await kv.put('task_' + id, JSON.stringify(task));
@@ -2653,11 +2835,17 @@ export default {
       if (!existing) return errorResponse('任务不存在', 404);
 
       const task = JSON.parse(existing);
+
+      if (task.mode === 'countdown') {
+        return errorResponse('单次提醒不支持续订，请直接编辑提醒日期和提醒时间', 400);
+      }
+
       const today = formatDateBeijingForWorker(new Date());
       let newNext;
+      let newTime = task.remindTime || '08:00';
       const isLunarPeriodic = task.calendarType === 'lunar' || task.mode === 'lunar';
 
-      if (isLunarPeriodic) {
+      if (isLunarPeriodic && task.periodUnit !== 'hour' && task.periodUnit !== 'day' && task.periodUnit !== 'week') {
         const from = parseDateLocal(today);
 
         const next = LunarCalendar.nextLunarDate(
@@ -2677,33 +2865,24 @@ export default {
         task.calendarType = 'lunar';
         task.periodValue = task.periodValue || 1;
         task.periodUnit = task.periodUnit || 'year';
-      } else if (task.mode === 'periodic') {
-        const d = parseDateLocal(today);
+      } else if (task.mode === 'periodic' || isLunarPeriodic) {
+        const base = parseDateTimeLocal(today, task.remindTime || '08:00');
+        const next = addPeriodToDateTimeForWorker(
+          base,
+          parseInt(task.periodValue) || 1,
+          task.periodUnit || 'month'
+        );
 
-        switch (task.periodUnit) {
-          case 'day':
-            d.setUTCDate(d.getUTCDate() + task.periodValue);
-            break;
-          case 'week':
-            d.setUTCDate(d.getUTCDate() + task.periodValue * 7);
-            break;
-          case 'month':
-            d.setUTCMonth(d.getUTCMonth() + task.periodValue);
-            break;
-          case 'year':
-            d.setUTCFullYear(d.getUTCFullYear() + task.periodValue);
-            break;
-        }
-
-        newNext = formatDateLocal(d);
-      } else if (task.mode === 'countdown') {
-        newNext = addDays(today, task.countdownDays);
+        newNext = formatDateLocal(next);
+        newTime = formatTimeLocal(next);
       } else {
         return errorResponse('未知模式', 400);
       }
 
       task.startDate = today;
+      task.startTime = task.remindTime || '08:00';
       task.nextReminder = newNext;
+      task.remindTime = newTime;
 
       if (task.calendarType === 'lunar' || task.mode === 'lunar') {
         const lunar = LunarCalendar.solarToLunar(
@@ -2727,7 +2906,8 @@ export default {
 
       history.push({
         renewedAt: new Date().toISOString(),
-        nextReminder: task.nextReminder
+        nextReminder: task.nextReminder,
+        remindTime: task.remindTime || '08:00'
       });
 
       if (history.length > 21) history = history.slice(-21);
@@ -2736,7 +2916,8 @@ export default {
 
       return new Response(JSON.stringify({
         success: true,
-        nextReminder: task.nextReminder
+        nextReminder: task.nextReminder,
+        remindTime: task.remindTime || '08:00'
       }), {
         headers: corsHeaders
       });
@@ -2875,8 +3056,8 @@ export default {
     const nowMs = Number(event.scheduledTime) || Date.now();
     const now = new Date(nowMs);
 
-    // Cron 每分钟触发一次，再按真实经过时间执行配置间隔。
-    // 这样 7、13 等不能整除 60 的间隔也不会失真。
+    // Cron 每分钟触发一次，再按标准分钟点执行配置间隔。
+    // 例如 5 分钟固定在 00、05、10、15...，不是从部署时间滚动。
     if (!await shouldRunScheduledCheck(kv, interval, nowMs)) return;
 
     const tasks = await getAllTasks(kv);
@@ -2968,42 +3149,50 @@ export default {
 
         if (!alreadyAutoRenewed) {
           const oldNext = task.nextReminder;
-          const newNext = calcNextFromReminderDate(task);
+          const oldTime = task.remindTime || '08:00';
+          const nextResult = calcNextFromReminderDate(task);
 
-          if (newNext && newNext !== oldNext) {
-            task.startDate = oldNext;
-            task.nextReminder = newNext;
+          if (nextResult && nextResult.nextReminder) {
+            const newNext = nextResult.nextReminder;
+            const newTime = nextResult.remindTime || oldTime;
 
-            if (task.calendarType === 'lunar' || task.mode === 'lunar') {
-              const lunar = LunarCalendar.solarToLunar(
-                parseInt(newNext.split('-')[0]),
-                parseInt(newNext.split('-')[1]),
-                parseInt(newNext.split('-')[2])
-              );
+            if (newNext !== oldNext || newTime !== oldTime) {
+              task.startDate = oldNext;
+              task.startTime = oldTime;
+              task.nextReminder = newNext;
+              task.remindTime = newTime;
 
-              if (lunar) {
-                task.lunarYear = lunar.lunarYear;
-                task.lunarMonth = lunar.lunarMonth;
-                task.lunarDay = lunar.lunarDay;
-                task.lunarLeap = lunar.isLeapMonth;
+              if (task.calendarType === 'lunar' || task.mode === 'lunar') {
+                const lunar = LunarCalendar.solarToLunar(
+                  parseInt(newNext.split('-')[0]),
+                  parseInt(newNext.split('-')[1]),
+                  parseInt(newNext.split('-')[2])
+                );
+
+                if (lunar) {
+                  task.lunarYear = lunar.lunarYear;
+                  task.lunarMonth = lunar.lunarMonth;
+                  task.lunarDay = lunar.lunarDay;
+                  task.lunarLeap = lunar.isLeapMonth;
+                }
               }
+
+              await kv.put('task_' + task.id, JSON.stringify(task));
+
+              await kv.put(autoRenewKey, new Date().toISOString(), {
+                expirationTtl: 400 * 24 * 60 * 60
+              });
+
+              await addPushLog(kv, {
+                type: '自动续订',
+                taskId: task.id,
+                taskName: task.name,
+                nextReminder: newNext,
+                remindTime: newTime,
+                success: true,
+                error: '旧提醒日：' + oldNext + ' ' + oldTime
+              });
             }
-
-            await kv.put('task_' + task.id, JSON.stringify(task));
-
-            await kv.put(autoRenewKey, new Date().toISOString(), {
-              expirationTtl: 400 * 24 * 60 * 60
-            });
-
-            await addPushLog(kv, {
-              type: '自动续订',
-              taskId: task.id,
-              taskName: task.name,
-              nextReminder: newNext,
-              remindTime: task.remindTime || '08:00',
-              success: true,
-              error: '旧提醒日：' + oldNext
-            });
           }
         }
 
