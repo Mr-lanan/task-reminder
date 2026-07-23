@@ -345,6 +345,11 @@ function getDashboardPage() {
   .modal-content input:focus, .modal-content select:focus, .modal-content textarea:focus { border-color: #4a6cf7; outline: none; }
   .modal-content .form-row { display: flex; gap: 12px; flex-wrap: wrap; }
   .modal-content .form-row > * { flex: 1; min-width: 120px; }
+  .periodic-switch { margin: 4px 0 14px 0; }
+  .lunar-fields { margin: 2px 0 6px 0; padding: 12px; border-radius: 10px; background: rgba(108,92,231,0.08); }
+  .lunar-leap-field { display: flex; align-items: center; gap: 8px; min-width: 180px; padding-bottom: 16px; }
+  .lunar-leap-field label { margin-bottom: 0; white-space: nowrap; }
+  .lunar-leap-field input { width: auto; margin: 0; }
   .modal-content .form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
   .modal-content .form-actions button { padding: 10px 28px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; transition: 0.15s; }
   .reminder-group { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
@@ -406,21 +411,72 @@ function getDashboardPage() {
     <div class="mode-hint" id="modeHint">周期模式：设置开始日期、开始时间和周期</div>
 
     <div id="periodicFields">
+      <div class="periodic-switch">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+          <input type="checkbox" id="calendarLunar" style="width:auto; margin:0;" onchange="toggleCalendarFields()"> 使用农历日期
+        </label>
+        <div class="mode-hint">不勾选：按公历开始日期和开始时间计算；勾选：先选择农历日期，再设置开始时间和周期。</div>
+      </div>
+
+      <div id="lunarFields" class="lunar-fields" style="display:none;">
+        <div class="form-row">
+          <div>
+            <label>农历年</label>
+            <select id="lunarYear" onchange="updateLunarNext()">
+              <!-- JS 动态生成年份 -->
+            </select>
+          </div>
+
+          <div>
+            <label>农历月</label>
+            <select id="lunarMonth" onchange="updateLunarNext()">
+              <option value="1">正月</option>
+              <option value="2">二月</option>
+              <option value="3">三月</option>
+              <option value="4">四月</option>
+              <option value="5">五月</option>
+              <option value="6">六月</option>
+              <option value="7">七月</option>
+              <option value="8">八月</option>
+              <option value="9">九月</option>
+              <option value="10">十月</option>
+              <option value="11">冬月</option>
+              <option value="12">腊月</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div>
+            <label>农历日</label>
+            <select id="lunarDay" onchange="updateLunarNext()">
+              <!-- JS 动态生成 1-30 -->
+            </select>
+          </div>
+
+          <div class="lunar-leap-field">
+            <label>这是闰月日期</label>
+            <input type="checkbox" id="lunarLeap" onchange="updateLunarNext()">
+          </div>
+        </div>
+
+        <div class="mode-hint" style="margin-bottom:4px;">
+          只有开始日期本身是“闰X月”时才勾选；普通农历生日不要勾选。
+        </div>
+      </div>
+
       <div class="form-row">
         <div id="solarDateRow"><label>开始日期（公历）</label><input type="date" id="startDate" onchange="updateNextDateFromStart()"></div>
         <div><label>开始时间（北京时间）</label><input type="time" id="startTime" value="08:00" step="60" onchange="validateTime(); updateNextDateFromStart()" oninput="validateTime(); updateNextDateFromStart()"></div>
+      </div>
+
+      <div class="form-row">
         <div><label>周期数值</label><input type="number" id="periodValue" value="1" min="1" onchange="updateNextDateFromStart()"></div>
         <div><label>周期单位</label>
           <select id="periodUnit" onchange="updateNextDateFromStart()">
             <option value="hour">小时</option><option value="day">日</option><option value="week">周</option><option value="month" selected>月</option><option value="year">年</option>
           </select>
         </div>
-      </div>
-      <div style="margin: 4px 0 12px 0;">
-        <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
-          <input type="checkbox" id="calendarLunar" style="width:auto; margin:0;" onchange="toggleCalendarFields()"> 使用农历日期
-        </label>
-        <div class="mode-hint">不勾选：按公历开始日期和开始时间计算；勾选：选择农历月/日，系统自动换算成公历提醒日期。</div>
       </div>
     </div>
 
@@ -431,51 +487,6 @@ function getDashboardPage() {
       </div>
       <div class="mode-hint">单次提醒：直接设置提醒日期和提醒时间，到点只提醒一次。</div>
     </div>
-
-   <div id="lunarFields" style="display:none;">
-     <div class="form-row">
-       <div>
-         <label>农历年</label>
-         <select id="lunarYear" onchange="updateLunarNext()">
-           <!-- JS 动态生成年份 -->
-         </select>
-       </div>
-
-       <div>
-         <label>农历月</label>
-         <select id="lunarMonth" onchange="updateLunarNext()">
-           <option value="1">正月</option>
-           <option value="2">二月</option>
-           <option value="3">三月</option>
-           <option value="4">四月</option>
-           <option value="5">五月</option>
-           <option value="6">六月</option>
-           <option value="7">七月</option>
-           <option value="8">八月</option>
-           <option value="9">九月</option>
-           <option value="10">十月</option>
-           <option value="11">冬月</option>
-           <option value="12">腊月</option>
-         </select>
-       </div>
-
-       <div>
-         <label>农历日</label>
-         <select id="lunarDay" onchange="updateLunarNext()">
-           <!-- JS 动态生成 1-30 -->
-         </select>
-       </div>
-
-       <div style="display:flex; align-items:center; gap:8px;">
-         <label style="margin-bottom:0;">这是闰月日期</label>
-         <input type="checkbox" id="lunarLeap" onchange="updateLunarNext()">
-       </div>
-     </div>
-
-     <div class="mode-hint" style="margin-bottom:10px;">
-    只有开始日期本身是“闰X月”时才勾选；普通农历生日不要勾选。
-   </div>
-</div>
 
     <input type="hidden" id="reminderDate">
     <input type="hidden" id="remindTime" value="08:00">
