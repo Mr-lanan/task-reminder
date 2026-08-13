@@ -310,8 +310,8 @@ function getDashboardPage() {
 
   .header { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 16px 24px; border-radius: 12px; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
   .header h1 { font-size: 22px; }
-  .header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-  .header-actions button { padding: 8px 18px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: 0.15s; }
+  .header-actions { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)); gap: 10px; }
+  .header-actions button { padding: 10px 16px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: 0.15s; display:flex; align-items:center; justify-content:center; gap:6px; min-height:42px; white-space:nowrap; }
   .btn-primary { background: #4a6cf7; color: #fff; }
   .btn-primary:hover { background: #3a5cd5; }
   .btn-success { background: #2ecc71; color: #fff; }
@@ -328,6 +328,8 @@ function getDashboardPage() {
   .btn-history:hover { background: #8c84f0; }
   .btn-trash { background: #e84393; color: #fff; }
   .btn-trash:hover { background: #d63078; }
+  .btn-backup { background: #0984e3; color: #fff; }
+  .btn-backup:hover { background: #0873c4; }
   .btn-sm { padding: 4px 14px; font-size: 12px; border-radius: 6px; border: none; cursor: pointer; transition: 0.15s; }
   .btn-sm.btn-outline { background: transparent; border: 2px solid #aaa; color: #555; }
   .btn-sm.btn-outline:hover { background: #f0f0f0; }
@@ -373,7 +375,7 @@ function getDashboardPage() {
   .time-error { color: #e74c3c; font-size: 12px; margin-top: -12px; margin-bottom: 12px; display: none; }
   .lunar-display { font-size: 13px; color: #6c5ce7; margin-top: -8px; margin-bottom: 12px; padding: 4px 8px; background: #f3f0ff; border-radius: 6px; }
   .reminder-preview { margin: 14px 0 16px 0; padding: 12px; background: #f3f0ff; border-radius: 8px; color: #4b3fbf; font-size: 14px; line-height: 1.7; white-space: pre-line; }
-  @media (max-width:600px){ .task-grid{grid-template-columns:1fr;} .reminder-group{flex-wrap:wrap;} .dashboard{grid-template-columns:1fr 1fr;} }
+  @media (max-width:600px){ .task-grid{grid-template-columns:1fr;} .reminder-group{flex-wrap:wrap;} .dashboard{grid-template-columns:1fr 1fr;} .header h1{width:100%;} .header-actions{width:100%;grid-template-columns:repeat(2,minmax(0,1fr));} .header-actions button{width:100%;padding:10px 8px;} }
 </style></head>
 <body>
 <div class="container" id="app">
@@ -389,10 +391,11 @@ function getDashboardPage() {
     <h1>📋 任务提醒</h1>
     <div class="header-actions">
       <button class="btn-primary" onclick="openAddModal()">➕ 新建</button>
-      <button class="btn-config" onclick="openConfigModal()">⚙️ 配置</button>
+      <button class="btn-config" onclick="openConfigModal()">🛠️ 配置</button>
       <button class="btn-history" onclick="viewPushLogs()">📨 推送日志</button>
+      <button class="btn-backup" onclick="openBackupModal()">☁️ 备份</button>
       <button class="btn-trash" onclick="viewTrash()">♻️ 回收站</button>
-      <button class="btn-danger" onclick="logout()">退出</button>
+      <button class="btn-danger" onclick="logout()">🚪 退出</button>
     </div>
   </div>
   <div id="taskList" class="task-grid"></div>
@@ -548,6 +551,57 @@ function getDashboardPage() {
       <button class="btn-danger" onclick="clearTrash()">清空回收站</button>
       <button class="btn-outline" onclick="closeModal('trashModal')">关闭</button>
     </div>
+  </div>
+</div>
+
+<!-- WebDAV 备份弹窗 -->
+<div class="modal" id="backupModal">
+  <div class="modal-content">
+    <h2>☁️ WebDAV 备份</h2>
+    <div class="mode-hint" style="margin-bottom:14px;">支持坚果云及通用 WebDAV（Nextcloud、群晖等）。远端最多保留最近 20 份，超过后自动删除最早备份。</div>
+
+    <label>WebDAV 类型</label>
+    <select id="backupProvider" onchange="updateBackupProvider()">
+      <option value="nutstore">坚果云</option>
+      <option value="custom">通用 WebDAV</option>
+    </select>
+
+    <label>WebDAV 地址</label>
+    <input type="text" id="backupUrl" placeholder="https://dav.jianguoyun.com/dav/">
+
+    <label>备份目录</label>
+    <input type="text" id="backupFolder" value="TaskReminderBackup" placeholder="TaskReminderBackup">
+
+    <div class="form-row">
+      <div><label>用户名</label><input type="text" id="backupUsername" autocomplete="username"></div>
+      <div><label>密码 / 应用密码</label><input type="password" id="backupPassword" autocomplete="current-password"></div>
+    </div>
+
+    <label>备份内容</label>
+    <select id="backupScope">
+      <option value="both">配置 / Key + 所有任务</option>
+      <option value="config">仅配置 / Key</option>
+      <option value="tasks">仅所有任务</option>
+    </select>
+    <div class="mode-hint" style="margin-top:-8px;margin-bottom:12px;">“所有任务”包含正常任务、回收站任务和续订历史；不备份 done/retry/autorenew 等临时推送状态，避免恢复后误判。</div>
+
+    <label>恢复备份时，已过期且未完成任务如何处理</label>
+    <select id="backupExpiredPolicy">
+      <option value="expired">恢复为已过期，不补发（推荐）</option>
+      <option value="push">恢复后立即推送一次，再保持已过期状态</option>
+    </select>
+
+    <div class="form-actions" style="justify-content:flex-start;flex-wrap:wrap;">
+      <button class="btn-config" onclick="saveBackupSettings()">保存连接</button>
+      <button class="btn-backup" onclick="createWebDavBackup()">立即备份</button>
+      <button class="btn-history" onclick="loadWebDavBackups()">刷新列表</button>
+    </div>
+
+    <hr style="margin:18px 0;">
+    <h3 style="margin-bottom:10px;">远端备份</h3>
+    <div id="backupList"><p style="color:#999;">尚未读取</p></div>
+
+    <div class="form-actions"><button class="btn-outline" onclick="closeModal('backupModal')">关闭</button></div>
   </div>
 </div>
 
@@ -1999,6 +2053,7 @@ async function viewTrash() {
     const data = await resp.json();
     const list = document.getElementById('trashList');
     const items = data.items || [];
+    const now = Date.now();
 
     if (items.length === 0) {
       list.innerHTML = '<p style="color:#999;">回收站为空</p>';
@@ -2009,13 +2064,27 @@ async function viewTrash() {
           ? formatSolarDisplay(item.nextReminder, item.remindTime || '08:00')
           : '-';
         const modeLabel = item.mode === 'countdown' ? '单次提醒' : ((item.calendarType === 'lunar' || item.mode === 'lunar') ? '周期/农历' : '周期');
+        const remindMs = item.nextReminder
+          ? new Date(item.nextReminder + 'T' + (item.remindTime || '08:00') + ':00+08:00').getTime()
+          : 0;
+        const isPast = !!remindMs && remindMs <= now && !item.completedAt;
+
+        let restoreButtons = '';
+        if (isPast) {
+          restoreButtons =
+            '<button class="btn-success btn-sm" onclick="restoreTrashTask(\\'' + item.id + '\\', \\'expired\\')">↩️ 恢复为已过期</button>' +
+            '<button class="btn-warning btn-sm" onclick="restoreTrashTask(\\'' + item.id + '\\', \\'push\\')">📤 恢复并立即推送</button>';
+        } else {
+          restoreButtons = '<button class="btn-success btn-sm" onclick="restoreTrashTask(\\'' + item.id + '\\', \\'normal\\')">↩️ 恢复</button>';
+        }
 
         return '<div class="history-item" style="padding:12px 0;">' +
           '<div><strong>' + escapeHtml(item.name || '-') + '</strong> <span style="font-size:12px;color:#999;">[' + modeLabel + ']</span></div>' +
           '<div>📅 原提醒：' + reminder + '</div>' +
           '<div>🗑️ 删除时间：' + deletedAt + '</div>' +
+          (isPast ? '<div style="font-size:12px;color:#e67e22;margin-top:4px;">原提醒时间已过去：可恢复为已过期，或立即补推一次；两种方式都不会进入 Cron 补发循环。</div>' : '') +
           '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
-            '<button class="btn-success btn-sm" onclick="restoreTrashTask(\\'' + item.id + '\\')">↩️ 恢复</button>' +
+            restoreButtons +
             '<button class="btn-danger btn-sm" onclick="permanentlyDeleteTrashTask(\\'' + item.id + '\\')">永久删除</button>' +
           '</div>' +
         '</div>';
@@ -2028,19 +2097,31 @@ async function viewTrash() {
   }
 }
 
-async function restoreTrashTask(id) {
-  if (!confirm('确认恢复这个任务？如果原提醒时间已经过去，将恢复为已过期状态且不会补发历史提醒。')) return;
+async function restoreTrashTask(id, policy) {
+  policy = policy || 'normal';
+
+  let message = '确认恢复这个任务？';
+  if (policy === 'expired') message = '确认恢复为“已过期”状态？不会补发历史提醒，编辑或手动续订后恢复正常提醒。';
+  if (policy === 'push') message = '确认恢复并立即推送一次？推送后仍保持已过期状态，避免 Cron 再次补发。';
+  if (!confirm(message)) return;
 
   try {
     const resp = await fetch('/api/trash/' + id + '/restore', {
       method: 'POST',
-      headers: getHeaders()
+      headers: getHeaders(),
+      body: JSON.stringify({ policy })
     });
 
     const data = await resp.json();
 
     if (data.success) {
-      showToast(data.suppressCatchUp ? '已恢复；原提醒已过期，不会补发历史提醒' : '任务已恢复');
+      if (data.pushAttempted) {
+        showToast(data.pushSuccess ? '已恢复并立即推送；任务保持已过期状态' : '任务已恢复为已过期；立即推送失败，请查看推送日志', data.pushSuccess ? 'success' : 'error');
+      } else if (data.suppressCatchUp) {
+        showToast('已恢复为已过期状态，不会补发历史提醒');
+      } else {
+        showToast('任务已恢复');
+      }
       await viewTrash();
       loadTasks();
     } else {
@@ -2092,6 +2173,190 @@ async function clearTrash() {
     }
   } catch (e) {
     showToast('清空回收站失败', 'error');
+  }
+}
+
+// ===== WebDAV 备份 =====
+function updateBackupProvider() {
+  const provider = document.getElementById('backupProvider').value;
+  const urlInput = document.getElementById('backupUrl');
+
+  if (provider === 'nutstore' && (!urlInput.value || urlInput.value.includes('jianguoyun.com'))) {
+    urlInput.value = 'https://dav.jianguoyun.com/dav/';
+  }
+}
+
+async function openBackupModal() {
+  openModal('backupModal');
+  document.getElementById('backupList').innerHTML = '<p style="color:#999;">正在读取...</p>';
+
+  try {
+    const resp = await fetch('/api/backup-settings', { headers: getHeaders() });
+    const data = await resp.json();
+
+    if (data.success) {
+      const settings = data.settings || {};
+      document.getElementById('backupProvider').value = settings.provider || 'nutstore';
+      document.getElementById('backupUrl').value = settings.url || 'https://dav.jianguoyun.com/dav/';
+      document.getElementById('backupFolder').value = settings.folder || 'TaskReminderBackup';
+      document.getElementById('backupUsername').value = settings.username || '';
+      document.getElementById('backupPassword').value = settings.password || '';
+      document.getElementById('backupScope').value = settings.scope || 'both';
+      updateBackupProvider();
+    }
+  } catch (e) {}
+
+  await loadWebDavBackups();
+}
+
+function getBackupSettingsFromForm() {
+  return {
+    provider: document.getElementById('backupProvider').value || 'nutstore',
+    url: document.getElementById('backupUrl').value.trim(),
+    folder: document.getElementById('backupFolder').value.trim() || 'TaskReminderBackup',
+    username: document.getElementById('backupUsername').value.trim(),
+    password: document.getElementById('backupPassword').value,
+    scope: document.getElementById('backupScope').value || 'both'
+  };
+}
+
+async function saveBackupSettings(showSuccess) {
+  const settings = getBackupSettingsFromForm();
+
+  if (!settings.url || !settings.username || !settings.password) {
+    showToast('请填写 WebDAV 地址、用户名和密码/应用密码', 'error');
+    return false;
+  }
+
+  try {
+    const resp = await fetch('/api/backup-settings', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(settings)
+    });
+    const data = await resp.json();
+
+    if (!data.success) {
+      showToast(data.message || '保存 WebDAV 配置失败', 'error');
+      return false;
+    }
+
+    if (showSuccess !== false) showToast('WebDAV 配置已保存');
+    return true;
+  } catch (e) {
+    showToast('保存 WebDAV 配置失败', 'error');
+    return false;
+  }
+}
+
+async function createWebDavBackup() {
+  if (!await saveBackupSettings(false)) return;
+
+  const scope = document.getElementById('backupScope').value || 'both';
+  showToast('正在备份，请稍候...');
+
+  try {
+    const resp = await fetch('/api/backups', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ scope })
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      showToast('备份成功：' + (data.fileName || ''));
+      await loadWebDavBackups();
+    } else {
+      showToast(data.message || '备份失败', 'error');
+    }
+  } catch (e) {
+    showToast('备份失败', 'error');
+  }
+}
+
+async function loadWebDavBackups() {
+  const list = document.getElementById('backupList');
+  if (!list) return;
+  list.innerHTML = '<p style="color:#999;">正在读取...</p>';
+
+  try {
+    const resp = await fetch('/api/backups', { headers: getHeaders() });
+    const data = await resp.json();
+
+    if (!data.success) {
+      list.innerHTML = '<p style="color:#e74c3c;">' + escapeHtml(data.message || '读取失败') + '</p>';
+      return;
+    }
+
+    const items = data.items || [];
+    if (items.length === 0) {
+      list.innerHTML = '<p style="color:#999;">暂无远端备份</p>';
+      return;
+    }
+
+    list.innerHTML = items.map(item => {
+      const size = item.size ? Math.max(1, Math.round(item.size / 1024)) + ' KB' : '-';
+      return '<div class="history-item" style="padding:12px 0;">' +
+        '<div><strong>' + escapeHtml(item.fileName || '-') + '</strong></div>' +
+        '<div>🕒 ' + escapeHtml(item.modified || '-') + '　📦 ' + size + '</div>' +
+        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
+          '<button class="btn-success btn-sm" onclick="restoreWebDavBackup(\\'' + encodeURIComponent(item.fileName) + '\\')">恢复</button>' +
+          '<button class="btn-danger btn-sm" onclick="deleteWebDavBackup(\\'' + encodeURIComponent(item.fileName) + '\\')">删除</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) {
+    list.innerHTML = '<p style="color:#e74c3c;">读取备份失败</p>';
+  }
+}
+
+async function restoreWebDavBackup(encodedFileName) {
+  const fileName = decodeURIComponent(encodedFileName);
+  const expiredPolicy = document.getElementById('backupExpiredPolicy').value || 'expired';
+  const policyText = expiredPolicy === 'push'
+    ? '已过期任务会立即推送一次，然后保持已过期状态。'
+    : '已过期任务会恢复为已过期状态，不补发。';
+
+  if (!confirm('确认恢复备份“' + fileName + '”？\\n当前采用合并恢复：同 ID 数据会覆盖，其他现有任务不会删除。\\n' + policyText)) return;
+
+  try {
+    const resp = await fetch('/api/backups/restore', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ fileName, expiredPolicy })
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      showToast('恢复完成：任务 ' + (data.restoredTasks || 0) + '，配置 ' + (data.restoredConfig ? '已恢复' : '未包含'));
+      loadTasks();
+    } else {
+      showToast(data.message || '恢复失败', 'error');
+    }
+  } catch (e) {
+    showToast('恢复失败', 'error');
+  }
+}
+
+async function deleteWebDavBackup(encodedFileName) {
+  const fileName = decodeURIComponent(encodedFileName);
+  if (!confirm('确定删除远端备份“' + fileName + '”？')) return;
+
+  try {
+    const resp = await fetch('/api/backups/' + encodeURIComponent(fileName), {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      showToast('远端备份已删除');
+      await loadWebDavBackups();
+    } else {
+      showToast(data.message || '删除失败', 'error');
+    }
+  } catch (e) {
+    showToast('删除失败', 'error');
   }
 }
 
@@ -3129,26 +3394,63 @@ export default {
 
       if (!raw) return errorResponse('回收站中不存在该任务', 404);
 
+      let body = {};
+      try { body = await request.json(); } catch (e) {}
+
+      const policy = body.policy || 'normal';
       const task = JSON.parse(raw);
       const restoredAt = new Date().toISOString();
       const remindMs = task.nextReminder
         ? new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00').getTime()
         : 0;
-      const suppressCatchUp = !!remindMs && remindMs <= Date.now() && !task.completedAt;
+      const isPast = !!remindMs && remindMs <= Date.now() && !task.completedAt;
 
       delete task.deletedAt;
       task.restoredAt = restoredAt;
 
-      if (suppressCatchUp) task.suppressCatchUp = true;
+      // 已过期任务恢复时统一禁止 Cron 补发；编辑或手动续订会清除此标记。
+      if (isPast) task.suppressCatchUp = true;
       else delete task.suppressCatchUp;
 
       await kv.put('task_' + id, JSON.stringify(task));
       await kv.delete('trash_' + id);
 
+      let pushAttempted = false;
+      let pushSuccess = false;
+
+      if (isPast && policy === 'push') {
+        pushAttempted = true;
+        const title = '♻️ 恢复提醒：' + task.name;
+        const content =
+          '📋 "' + task.name + '" 已从回收站恢复，并按你的选择立即推送一次。\n' +
+          '📅 原提醒日：' + task.nextReminder + ' ' + (task.remindTime || '08:00') + '\n' +
+          '📝 备注：' + (task.remark || '无');
+
+        const result = await sendNotification(config, title, content, task);
+        pushSuccess = !!result.success;
+
+        await addPushLog(kv, {
+          type: '恢复立即推送',
+          taskId: task.id,
+          taskName: task.name,
+          nextReminder: task.nextReminder,
+          remindTime: task.remindTime || '08:00',
+          success: pushSuccess,
+          error: result.error || ''
+        });
+
+        // 单次提醒立即补推成功后直接标记完成；周期任务仍保持已过期，等待编辑或手动续订。
+        if (pushSuccess && task.mode === 'countdown') {
+          await markSingleTaskCompleted(kv, task, '从回收站恢复后立即推送成功，单次提醒已标记完成。');
+        }
+      }
+
       return new Response(JSON.stringify({
         success: true,
         task,
-        suppressCatchUp
+        suppressCatchUp: isPast,
+        pushAttempted,
+        pushSuccess
       }), {
         headers: corsHeaders
       });
@@ -3360,6 +3662,129 @@ export default {
       }), {
         headers: corsHeaders
       });
+    }
+
+    // ---------- WebDAV 备份设置 ----------
+    if (path === '/api/backup-settings' && method === 'GET') {
+      const settings = getWebDavSettingsFromConfig(config);
+
+      return new Response(JSON.stringify({
+        success: true,
+        settings
+      }), {
+        headers: corsHeaders
+      });
+    }
+
+    if (path === '/api/backup-settings' && method === 'POST') {
+      const body = await request.json();
+      const settings = normalizeWebDavSettings(body);
+
+      if (!settings.url || !settings.username || !settings.password) {
+        return errorResponse('请填写 WebDAV 地址、用户名和密码/应用密码', 400);
+      }
+
+      const rawConfig = await kv.get('config');
+      const existing = rawConfig ? JSON.parse(rawConfig) : {};
+
+      existing.webdavProvider = settings.provider;
+      existing.webdavUrl = settings.url;
+      existing.webdavFolder = settings.folder;
+      existing.webdavUsername = settings.username;
+      existing.webdavPassword = settings.password;
+      existing.webdavBackupScope = settings.scope;
+
+      await kv.put('config', JSON.stringify(existing));
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: corsHeaders
+      });
+    }
+
+    // ---------- WebDAV 备份列表 ----------
+    if (path === '/api/backups' && method === 'GET') {
+      try {
+        const settings = getWebDavSettingsFromConfig(config);
+        validateWebDavSettings(settings);
+        const items = await listWebDavBackups(settings);
+
+        return new Response(JSON.stringify({
+          success: true,
+          items
+        }), {
+          headers: corsHeaders
+        });
+      } catch (e) {
+        return errorResponse(e.message || '读取 WebDAV 备份失败', 500);
+      }
+    }
+
+    // ---------- 创建 WebDAV 备份 ----------
+    if (path === '/api/backups' && method === 'POST') {
+      try {
+        const body = await request.json();
+        const settings = getWebDavSettingsFromConfig(config);
+        validateWebDavSettings(settings);
+        const scope = ['config', 'tasks', 'both'].includes(body.scope) ? body.scope : (settings.scope || 'both');
+        const payload = await buildBackupPayload(kv, scope);
+        const fileName = buildBackupFileName(scope);
+
+        await putWebDavBackup(settings, fileName, payload);
+        const deletedOld = await trimWebDavBackups(settings, 20);
+
+        return new Response(JSON.stringify({
+          success: true,
+          fileName,
+          deletedOld
+        }), {
+          headers: corsHeaders
+        });
+      } catch (e) {
+        return errorResponse(e.message || 'WebDAV 备份失败', 500);
+      }
+    }
+
+    // ---------- 恢复 WebDAV 备份 ----------
+    if (path === '/api/backups/restore' && method === 'POST') {
+      try {
+        const body = await request.json();
+        const fileName = String(body.fileName || '').trim();
+        const expiredPolicy = body.expiredPolicy === 'push' ? 'push' : 'expired';
+
+        if (!isSafeBackupFileName(fileName)) return errorResponse('备份文件名无效', 400);
+
+        const settings = getWebDavSettingsFromConfig(config);
+        validateWebDavSettings(settings);
+        const backup = await getWebDavBackup(settings, fileName);
+        const result = await restoreBackupPayload(kv, config, backup, expiredPolicy);
+
+        return new Response(JSON.stringify({
+          success: true,
+          ...result
+        }), {
+          headers: corsHeaders
+        });
+      } catch (e) {
+        return errorResponse(e.message || '恢复 WebDAV 备份失败', 500);
+      }
+    }
+
+    // ---------- 删除单个 WebDAV 备份 ----------
+    if (path.startsWith('/api/backups/') && method === 'DELETE') {
+      try {
+        const fileName = decodeURIComponent(path.slice('/api/backups/'.length));
+        if (!isSafeBackupFileName(fileName)) return errorResponse('备份文件名无效', 400);
+
+        const settings = getWebDavSettingsFromConfig(config);
+        validateWebDavSettings(settings);
+        await deleteWebDavBackupFile(settings, fileName);
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: corsHeaders
+        });
+      } catch (e) {
+        return errorResponse(e.message || '删除 WebDAV 备份失败', 500);
+      }
     }
 
     // ---------- 配置读取 ----------
@@ -3727,6 +4152,389 @@ async function cleanupExpiredTrash(kv, nowMs) {
   }
 
   await kv.put(dayKey, '1', { expirationTtl: 2 * 24 * 60 * 60 });
+}
+
+function normalizeWebDavSettings(input) {
+  const provider = input && input.provider === 'custom' ? 'custom' : 'nutstore';
+  let url = String((input && input.url) || '').trim();
+  if (!url && provider === 'nutstore') url = 'https://dav.jianguoyun.com/dav/';
+
+  return {
+    provider,
+    url,
+    folder: String((input && input.folder) || 'TaskReminderBackup').trim() || 'TaskReminderBackup',
+    username: String((input && input.username) || '').trim(),
+    password: String((input && input.password) || ''),
+    scope: ['config', 'tasks', 'both'].includes(input && input.scope) ? input.scope : 'both'
+  };
+}
+
+function getWebDavSettingsFromConfig(config) {
+  return normalizeWebDavSettings({
+    provider: config.webdavProvider,
+    url: config.webdavUrl,
+    folder: config.webdavFolder,
+    username: config.webdavUsername,
+    password: config.webdavPassword,
+    scope: config.webdavBackupScope
+  });
+}
+
+function validateWebDavSettings(settings) {
+  if (!settings.url || !settings.username || !settings.password) {
+    throw new Error('请先配置 WebDAV 地址、用户名和密码/应用密码');
+  }
+
+  let parsed;
+  try { parsed = new URL(settings.url); } catch (e) { throw new Error('WebDAV 地址格式无效'); }
+  if (!/^https?:$/.test(parsed.protocol)) throw new Error('WebDAV 地址必须使用 http 或 https');
+}
+
+function webDavAuthHeader(settings) {
+  const bytes = new TextEncoder().encode(settings.username + ':' + settings.password);
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return 'Basic ' + btoa(binary);
+}
+
+function normalizeWebDavBaseUrl(url) {
+  return String(url || '').replace(/\/+$/, '') + '/';
+}
+
+function encodeWebDavPathPart(value) {
+  return String(value || '')
+    .split('/')
+    .filter(Boolean)
+    .map(part => encodeURIComponent(part))
+    .join('/');
+}
+
+function getWebDavFolderUrl(settings) {
+  return normalizeWebDavBaseUrl(settings.url) + encodeWebDavPathPart(settings.folder) + '/';
+}
+
+function getWebDavFileUrl(settings, fileName) {
+  return getWebDavFolderUrl(settings) + encodeURIComponent(fileName);
+}
+
+async function ensureWebDavFolder(settings) {
+  const base = normalizeWebDavBaseUrl(settings.url);
+  const parts = String(settings.folder || 'TaskReminderBackup').split('/').filter(Boolean);
+  let current = base;
+
+  for (const part of parts) {
+    current += encodeURIComponent(part) + '/';
+
+    const response = await fetch(current, {
+      method: 'MKCOL',
+      headers: {
+        'Authorization': webDavAuthHeader(settings)
+      }
+    });
+
+    if (response.ok || response.status === 405 || response.status === 301 || response.status === 302) continue;
+
+    const check = await fetch(current, {
+      method: 'PROPFIND',
+      headers: {
+        'Authorization': webDavAuthHeader(settings),
+        'Depth': '0'
+      }
+    });
+
+    if (!(check.ok || check.status === 207)) {
+      throw new Error('无法创建/访问 WebDAV 备份目录（HTTP ' + response.status + '）');
+    }
+  }
+}
+
+function decodeXmlEntities(text) {
+  return String(text || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function isSafeBackupFileName(fileName) {
+  return /^task-reminder_backup_(config|tasks|both)_\d{8}_\d{6}\.json$/.test(String(fileName || ''));
+}
+
+async function listWebDavBackups(settings) {
+  await ensureWebDavFolder(settings);
+
+  const response = await fetch(getWebDavFolderUrl(settings), {
+    method: 'PROPFIND',
+    headers: {
+      'Authorization': webDavAuthHeader(settings),
+      'Depth': '1',
+      'Content-Type': 'application/xml; charset=utf-8'
+    },
+    body: '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:getlastmodified/><d:getcontentlength/><d:resourcetype/></d:prop></d:propfind>'
+  });
+
+  if (!(response.ok || response.status === 207)) {
+    throw new Error('读取 WebDAV 目录失败（HTTP ' + response.status + '）');
+  }
+
+  const xml = await response.text();
+  const blocks = xml.match(/<(?:[^:>]+:)?response\b[\s\S]*?<\/(?:[^:>]+:)?response>/gi) || [];
+  const items = [];
+
+  for (const block of blocks) {
+    const hrefMatch = block.match(/<(?:[^:>]+:)?href\b[^>]*>([\s\S]*?)<\/(?:[^:>]+:)?href>/i);
+    if (!hrefMatch) continue;
+
+    let href = decodeXmlEntities(hrefMatch[1].trim());
+    try { href = decodeURIComponent(href); } catch (e) {}
+    const fileName = href.split('/').filter(Boolean).pop() || '';
+    if (!isSafeBackupFileName(fileName)) continue;
+
+    const modifiedMatch = block.match(/<(?:[^:>]+:)?getlastmodified\b[^>]*>([\s\S]*?)<\/(?:[^:>]+:)?getlastmodified>/i);
+    const sizeMatch = block.match(/<(?:[^:>]+:)?getcontentlength\b[^>]*>([\s\S]*?)<\/(?:[^:>]+:)?getcontentlength>/i);
+    const modifiedRaw = modifiedMatch ? decodeXmlEntities(modifiedMatch[1].trim()) : '';
+    const modifiedDate = modifiedRaw ? new Date(modifiedRaw) : null;
+
+    items.push({
+      fileName,
+      modified: modifiedDate && !isNaN(modifiedDate.getTime()) ? modifiedDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '-',
+      modifiedMs: modifiedDate && !isNaN(modifiedDate.getTime()) ? modifiedDate.getTime() : 0,
+      size: sizeMatch ? (parseInt(sizeMatch[1], 10) || 0) : 0
+    });
+  }
+
+  items.sort((a, b) => {
+    if (b.modifiedMs !== a.modifiedMs) return b.modifiedMs - a.modifiedMs;
+    return b.fileName.localeCompare(a.fileName);
+  });
+
+  return items;
+}
+
+function buildBackupFileName(scope) {
+  const bj = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const stamp =
+    String(bj.getUTCFullYear()) +
+    String(bj.getUTCMonth() + 1).padStart(2, '0') +
+    String(bj.getUTCDate()).padStart(2, '0') + '_' +
+    String(bj.getUTCHours()).padStart(2, '0') +
+    String(bj.getUTCMinutes()).padStart(2, '0') +
+    String(bj.getUTCSeconds()).padStart(2, '0');
+  return 'task-reminder_backup_' + scope + '_' + stamp + '.json';
+}
+
+async function buildBackupPayload(kv, scope) {
+  const payload = {
+    format: 'task-reminder-backup-v1',
+    exportedAt: new Date().toISOString(),
+    scope
+  };
+
+  if (scope === 'config' || scope === 'both') {
+    const raw = await kv.get('config');
+    const cfg = raw ? JSON.parse(raw) : {};
+    const configCopy = { ...cfg };
+
+    // WebDAV 自身密码不写进远端备份，避免备份凭据自我泄露；推送 API Key 会正常备份。
+    delete configCopy.webdavPassword;
+    delete configCopy.jwtSecret;
+    payload.config = configCopy;
+  }
+
+  if (scope === 'tasks' || scope === 'both') {
+    payload.tasks = await getAllTasks(kv);
+    payload.trash = await getAllTrash(kv);
+    payload.histories = {};
+
+    const ids = new Set();
+    for (const task of payload.tasks) if (task && task.id) ids.add(task.id);
+    for (const task of payload.trash) if (task && task.id) ids.add(task.id);
+
+    for (const id of ids) {
+      const raw = await kv.get('history_' + id);
+      if (raw) {
+        try { payload.histories[id] = JSON.parse(raw); } catch (e) {}
+      }
+    }
+  }
+
+  return payload;
+}
+
+async function putWebDavBackup(settings, fileName, payload) {
+  await ensureWebDavFolder(settings);
+  const response = await fetch(getWebDavFileUrl(settings, fileName), {
+    method: 'PUT',
+    headers: {
+      'Authorization': webDavAuthHeader(settings),
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify(payload, null, 2)
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error('上传 WebDAV 备份失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
+  }
+}
+
+async function getWebDavBackup(settings, fileName) {
+  const response = await fetch(getWebDavFileUrl(settings, fileName), {
+    headers: {
+      'Authorization': webDavAuthHeader(settings)
+    }
+  });
+
+  if (!response.ok) throw new Error('下载备份失败（HTTP ' + response.status + '）');
+
+  let data;
+  try { data = await response.json(); } catch (e) { throw new Error('备份文件不是有效 JSON'); }
+  if (!data || data.format !== 'task-reminder-backup-v1') throw new Error('不是本系统支持的备份文件');
+  return data;
+}
+
+async function deleteWebDavBackupFile(settings, fileName) {
+  const response = await fetch(getWebDavFileUrl(settings, fileName), {
+    method: 'DELETE',
+    headers: {
+      'Authorization': webDavAuthHeader(settings)
+    }
+  });
+
+  if (!(response.ok || response.status === 404)) {
+    throw new Error('删除远端备份失败（HTTP ' + response.status + '）');
+  }
+}
+
+async function trimWebDavBackups(settings, maxCount) {
+  const items = await listWebDavBackups(settings);
+  const keep = Math.max(1, parseInt(maxCount) || 20);
+  if (items.length <= keep) return 0;
+
+  const oldItems = items.slice(keep);
+  let deleted = 0;
+
+  for (const item of oldItems) {
+    try {
+      await deleteWebDavBackupFile(settings, item.fileName);
+      deleted++;
+    } catch (e) {}
+  }
+
+  return deleted;
+}
+
+async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
+  let restoredConfig = false;
+  let restoredTasks = 0;
+  let restoredTrash = 0;
+  let pushedExpired = 0;
+  let pushConfig = { ...config };
+  const nowMs = Date.now();
+  const restoredAt = new Date(nowMs).toISOString();
+
+  if (backup.config && typeof backup.config === 'object') {
+    const currentRaw = await kv.get('config');
+    const current = currentRaw ? JSON.parse(currentRaw) : {};
+    const preserved = {
+      webdavProvider: current.webdavProvider,
+      webdavUrl: current.webdavUrl,
+      webdavFolder: current.webdavFolder,
+      webdavUsername: current.webdavUsername,
+      webdavPassword: current.webdavPassword,
+      webdavBackupScope: current.webdavBackupScope,
+      jwtSecret: current.jwtSecret
+    };
+
+    const merged = { ...current, ...backup.config };
+    for (const [key, value] of Object.entries(preserved)) {
+      if (value !== undefined) merged[key] = value;
+    }
+
+    await kv.put('config', JSON.stringify(merged));
+    pushConfig = { ...pushConfig, ...merged };
+    restoredConfig = true;
+  }
+
+  const histories = backup.histories && typeof backup.histories === 'object' ? backup.histories : {};
+
+  if (Array.isArray(backup.tasks)) {
+    for (const source of backup.tasks) {
+      if (!source || !source.id) continue;
+      const task = JSON.parse(JSON.stringify(source));
+      delete task.deletedAt;
+      task.restoredAt = restoredAt;
+
+      const remindMs = task.nextReminder
+        ? new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00').getTime()
+        : 0;
+      const isPast = !!remindMs && remindMs <= nowMs && !task.completedAt;
+
+      if (isPast) task.suppressCatchUp = true;
+      else delete task.suppressCatchUp;
+
+      await deleteTaskStateKeys(kv, task.id);
+      await kv.delete('trash_' + task.id);
+      await kv.put('task_' + task.id, JSON.stringify(task));
+
+      if (Object.prototype.hasOwnProperty.call(histories, task.id)) {
+        await kv.put('history_' + task.id, JSON.stringify(histories[task.id] || []));
+      }
+
+      restoredTasks++;
+
+      if (isPast && expiredPolicy === 'push') {
+        const title = '☁️ 备份恢复提醒：' + task.name;
+        const content =
+          '📋 "' + task.name + '" 已从 WebDAV 备份恢复，并按你的选择立即推送一次。\n' +
+          '📅 原提醒日：' + task.nextReminder + ' ' + (task.remindTime || '08:00') + '\n' +
+          '📝 备注：' + (task.remark || '无');
+        const result = await sendNotification(pushConfig, title, content, task);
+
+        await addPushLog(kv, {
+          type: '备份恢复立即推送',
+          taskId: task.id,
+          taskName: task.name,
+          nextReminder: task.nextReminder,
+          remindTime: task.remindTime || '08:00',
+          success: !!result.success,
+          error: result.error || ''
+        });
+
+        if (result.success) {
+          pushedExpired++;
+          if (task.mode === 'countdown') {
+            await markSingleTaskCompleted(kv, task, '从 WebDAV 备份恢复后立即推送成功，单次提醒已标记完成。');
+          }
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(backup.trash)) {
+    for (const source of backup.trash) {
+      if (!source || !source.id) continue;
+      const task = JSON.parse(JSON.stringify(source));
+      if (!task.deletedAt) task.deletedAt = restoredAt;
+
+      await kv.delete('task_' + task.id);
+      await kv.put('trash_' + task.id, JSON.stringify(task));
+
+      if (Object.prototype.hasOwnProperty.call(histories, task.id)) {
+        await kv.put('history_' + task.id, JSON.stringify(histories[task.id] || []));
+      }
+
+      restoredTrash++;
+    }
+  }
+
+  return {
+    restoredConfig,
+    restoredTasks,
+    restoredTrash,
+    pushedExpired
+  };
 }
 
 async function getAllTasks(kv) {
