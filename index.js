@@ -326,6 +326,8 @@ function getDashboardPage() {
   .btn-config:hover { background: #00a381; }
   .btn-history { background: #a29bfe; color: #fff; }
   .btn-history:hover { background: #8c84f0; }
+  .btn-trash { background: #e84393; color: #fff; }
+  .btn-trash:hover { background: #d63078; }
   .btn-sm { padding: 4px 14px; font-size: 12px; border-radius: 6px; border: none; cursor: pointer; transition: 0.15s; }
   .btn-sm.btn-outline { background: transparent; border: 2px solid #aaa; color: #555; }
   .btn-sm.btn-outline:hover { background: #f0f0f0; }
@@ -389,7 +391,7 @@ function getDashboardPage() {
       <button class="btn-primary" onclick="openAddModal()">➕ 新建</button>
       <button class="btn-config" onclick="openConfigModal()">⚙️ 配置</button>
       <button class="btn-history" onclick="viewPushLogs()">📨 推送日志</button>
-      <button class="btn-outline" onclick="viewTrash()">♻️ 回收站</button>
+      <button class="btn-trash" onclick="viewTrash()">♻️ 回收站</button>
       <button class="btn-danger" onclick="logout()">退出</button>
     </div>
   </div>
