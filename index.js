@@ -499,7 +499,7 @@ function getDashboardPage() {
       <div class="mode-hint">自动续订：到提醒日期后，以当前提醒日为基准计算下一周期；手动续订仍然从当前日期重新开始。</div>
     </div>
 
-    <label>提前提醒（点击 ➕ 添加多组，单位：天/小时）</label>
+    <label>提前提醒（点击 ➕ 添加多组，单位：天/小时/分钟）</label>
     <div id="reminderDaysContainer"></div>
     <button class="btn-primary btn-sm" onclick="addReminderGroup()">➕ 添加一组</button>
 
@@ -1106,7 +1106,9 @@ function formatLunarDisplay(dateStr, timeStr) {
 function calcAdvanceDateTime(dateStr, timeStr, value, unit) {
   const d = parseDateTimeLocalFrontend(dateStr, timeStr);
 
-  if (unit === 'hour') {
+  if (unit === 'minute') {
+    d.setUTCMinutes(d.getUTCMinutes() - value);
+  } else if (unit === 'hour') {
     d.setUTCHours(d.getUTCHours() - value);
   } else {
     d.setUTCDate(d.getUTCDate() - value);
@@ -1140,10 +1142,17 @@ function getReminderPreviewText() {
   const groups = getReminderGroups();
 
   groups.forEach((g, index) => {
-    const adv = calcAdvanceDateTime(dateStr, timeStr, g.value, g.unit || 'day');
-    const unitText = (g.unit || 'day') === 'hour' ? '小时' : '天';
+    const unit = g.unit || 'day';
+    const unitText = unit === 'minute' ? '分钟' : (unit === 'hour' ? '小时' : '天');
 
     lines.push('');
+
+    if (unit === 'minute' && g.value % 5 !== 0) {
+      lines.push('⚠️ 提前提醒 ' + (index + 1) + '：分钟数必须是 5 的倍数');
+      return;
+    }
+
+    const adv = calcAdvanceDateTime(dateStr, timeStr, g.value, unit);
     lines.push('⏰ 提前提醒 ' + (index + 1) + '：提前 ' + g.value + unitText);
     lines.push(formatSolarDisplay(adv.date, adv.time));
     lines.push(formatLunarDisplay(adv.date, adv.time));
@@ -1359,9 +1368,27 @@ function addReminderGroup(value, unit) {
   input.onchange = updateReminderPreview;
 
   const select = document.createElement('select');
-  select.innerHTML = '<option value="day">天</option><option value="hour">小时</option>';
+  select.innerHTML = '<option value="day">天</option><option value="hour">小时</option><option value="minute">分钟</option>';
   if (unit) select.value = unit;
-  select.onchange = updateReminderPreview;
+
+  const applyInputRules = function() {
+    if (select.value === 'minute') {
+      input.min = 5;
+      input.step = 5;
+      input.placeholder = '例如 5';
+    } else {
+      input.min = 1;
+      input.step = 1;
+      input.placeholder = '例如 3';
+    }
+  };
+
+  select.onchange = function() {
+    applyInputRules();
+    updateReminderPreview();
+  };
+
+  applyInputRules();
 
   const delBtn = document.createElement('button');
   delBtn.textContent = '✕';
@@ -1396,7 +1423,9 @@ function loadReminderGroups(groups) {
 function getReminderOffsetMinutes(group) {
   const value = parseInt(group.value) || 0;
   const unit = group.unit || 'day';
-  return unit === 'hour' ? value * 60 : value * 24 * 60;
+  if (unit === 'minute') return value;
+  if (unit === 'hour') return value * 60;
+  return value * 24 * 60;
 }
 
 function sortReminderGroups(groups) {
@@ -1483,7 +1512,7 @@ async function loadTasks() {
           unit: t.reminderUnits && t.reminderUnits[i] ? t.reminderUnits[i] : 'day'
         })));
         const reminderStr = sortedReminders.map(g => {
-          return g.value + (g.unit === 'hour' ? '小时' : '天');
+          return g.value + (g.unit === 'minute' ? '分钟' : (g.unit === 'hour' ? '小时' : '天'));
         }).join(', ') || '无';
 
         let ruleStr = '单次提醒';
@@ -1668,6 +1697,13 @@ async function saveTask() {
   const mode = document.getElementById('taskMode').value;
   const remark = document.getElementById('remark').value.trim();
   const reminderGroups = getReminderGroups();
+  const invalidMinuteReminder = reminderGroups.find(g => g.unit === 'minute' && g.value % 5 !== 0);
+
+  if (invalidMinuteReminder) {
+    showToast('提前提醒的分钟数必须是 5 的倍数', 'error');
+    return;
+  }
+
   const lunarCheckbox = document.getElementById('calendarLunar');
   const useLunarCalendar = mode === 'periodic' && lunarCheckbox && lunarCheckbox.checked;
 
@@ -2238,7 +2274,9 @@ function makeRemindDateTime(task) {
 
 function getReminderOffsetMinutesForWorker(value, unit) {
   const num = parseInt(value) || 0;
-  return unit === 'hour' ? num * 60 : num * 24 * 60;
+  if (unit === 'minute') return num;
+  if (unit === 'hour') return num * 60;
+  return num * 24 * 60;
 }
 
 function normalizeReminderPairs(reminderDays, reminderUnits) {
@@ -2273,7 +2311,9 @@ async function markSingleTaskCompleted(kv, task, reason) {
 function makeAdvanceTriggerTime(task, value, unit) {
   const trigger = makeRemindDateTime(task);
 
-  if (unit === 'hour') {
+  if (unit === 'minute') {
+    trigger.setMinutes(trigger.getMinutes() - value);
+  } else if (unit === 'hour') {
     trigger.setHours(trigger.getHours() - value);
   } else {
     trigger.setDate(trigger.getDate() - value);
@@ -2827,6 +2867,10 @@ export default {
 
       const reminderPairs = normalizeReminderPairs(reminderDays || [], reminderUnits || []);
 
+      if (reminderPairs.some(g => g.unit === 'minute' && g.value % 5 !== 0)) {
+        return errorResponse('提前提醒的分钟数必须是 5 的倍数', 400);
+      }
+
       const task = {
         id: crypto.randomUUID(),
         name,
@@ -2879,6 +2923,11 @@ export default {
       task.remindTime = body.remindTime || '08:00';
       task.remark = body.remark || '';
       const reminderPairs = normalizeReminderPairs(body.reminderDays || [], body.reminderUnits || []);
+
+      if (reminderPairs.some(g => g.unit === 'minute' && g.value % 5 !== 0)) {
+        return errorResponse('提前提醒的分钟数必须是 5 的倍数', 400);
+      }
+
       task.reminderDays = reminderPairs.map(g => g.value);
       task.reminderUnits = reminderPairs.map(g => g.unit);
       task.nextReminder = body.nextReminder || task.nextReminder;
@@ -3200,7 +3249,7 @@ export default {
           const content =
             '📋 "' + task.name + '" 提醒日即将到来！\n' +
             '📅 日期：' + task.nextReminder + ' ' + (task.remindTime || '08:00') + '\n' +
-            '⏳ 提前提醒：' + val + (unit === 'hour' ? '小时' : '天') + '\n' +
+            '⏳ 提前提醒：' + val + (unit === 'minute' ? '分钟' : (unit === 'hour' ? '小时' : '天')) + '\n' +
             '📝 备注：' + (task.remark || '无');
 
           const notifyKey = 'advance_' +
