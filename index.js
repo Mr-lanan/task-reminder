@@ -571,7 +571,7 @@ function getDashboardPage() {
 
     <label>备份目录 / 标识</label>
     <input type="text" id="backupFolder" value="TaskReminderBackup" placeholder="TaskReminderBackup">
-    <div class="mode-hint" id="backupFolderHint" style="margin-top:-8px;margin-bottom:12px;">坚果云兼容模式：不创建远端目录，使用该名称作为备份文件前缀，避免 WebDAV 建目录失败；通用 WebDAV 则使用实际目录。</div>
+    <div class="mode-hint" id="backupFolderHint" style="margin-top:-8px;margin-bottom:12px;">坚果云兼容模式：不创建远端目录；备份文件和索引直接保存到 /dav/ 根目录，并使用该名称作为文件前缀，避免根目录 PROPFIND/MKCOL 兼容问题；通用 WebDAV 则使用实际目录。</div>
 
     <div class="form-row">
       <div><label>用户名</label><input type="text" id="backupUsername" autocomplete="username"></div>
@@ -594,6 +594,7 @@ function getDashboardPage() {
 
     <div class="form-actions" style="justify-content:flex-start;flex-wrap:wrap;">
       <button class="btn-config" onclick="saveBackupSettings()">保存连接</button>
+      <button class="btn-warning" onclick="testWebDavConnection()">测试连接</button>
       <button class="btn-backup" onclick="createWebDavBackup()">立即备份</button>
       <button class="btn-history" onclick="loadWebDavBackups()">刷新列表</button>
     </div>
@@ -2189,7 +2190,7 @@ function updateBackupProvider() {
 
   if (hint) {
     hint.textContent = provider === 'nutstore'
-      ? '坚果云兼容模式：不创建远端目录，使用该名称作为备份文件前缀，避免 WebDAV 建目录失败。'
+      ? '坚果云兼容模式：不创建远端目录；使用文件前缀 + 索引文件管理备份，不再读取 /dav/ 根目录列表。'
       : '通用 WebDAV：这里作为实际远端目录使用，系统会按需创建。';
   }
 }
@@ -2261,6 +2262,34 @@ async function saveBackupSettings(showSuccess) {
   } catch (e) {
     showToast('保存 WebDAV 配置失败', 'error');
     return false;
+  }
+}
+
+async function testWebDavConnection() {
+  const settings = getBackupSettingsFromForm();
+
+  if (!settings.url || !settings.username || !settings.password) {
+    showToast('请填写 WebDAV 地址、用户名和密码/应用密码', 'error');
+    return;
+  }
+
+  showToast('正在测试 WebDAV 连接...');
+
+  try {
+    const resp = await fetch('/api/backup-test', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(settings)
+    });
+    const data = await resp.json();
+
+    if (data.success) {
+      showToast(data.message || 'WebDAV 连接测试成功');
+    } else {
+      showToast(data.message || 'WebDAV 连接测试失败', 'error');
+    }
+  } catch (e) {
+    showToast('WebDAV 连接测试失败', 'error');
   }
 }
 
@@ -3716,6 +3745,25 @@ export default {
       });
     }
 
+    // ---------- WebDAV 连接测试 ----------
+    if (path === '/api/backup-test' && method === 'POST') {
+      try {
+        const body = await request.json();
+        const settings = normalizeWebDavSettings(body);
+        validateWebDavSettings(settings);
+        const result = await testWebDavConnectionForWorker(settings);
+
+        return new Response(JSON.stringify({
+          success: true,
+          ...result
+        }), {
+          headers: corsHeaders
+        });
+      } catch (e) {
+        return errorResponse(e.message || 'WebDAV 连接测试失败', 500);
+      }
+    }
+
     // ---------- WebDAV 备份列表 ----------
     if (path === '/api/backups' && method === 'GET') {
       try {
@@ -4234,6 +4282,102 @@ function getNutstoreBackupPrefix(settings) {
   return (safe || 'TaskReminderBackup') + '__';
 }
 
+function getNutstoreManifestFileName(settings) {
+  return getNutstoreBackupPrefix(settings) + 'manifest.json';
+}
+
+function getNutstoreManifestUrl(settings) {
+  return normalizeWebDavBaseUrl(settings.url) + encodeURIComponent(getNutstoreManifestFileName(settings));
+}
+
+function createEmptyNutstoreManifest() {
+  return {
+    format: 'task-reminder-webdav-manifest-v1',
+    items: []
+  };
+}
+
+async function readNutstoreManifest(settings) {
+  const response = await fetch(getNutstoreManifestUrl(settings), {
+    method: 'GET',
+    headers: {
+      'Authorization': webDavAuthHeader(settings),
+      'Cache-Control': 'no-cache'
+    }
+  });
+
+  if (response.status === 404) return createEmptyNutstoreManifest();
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + response.status + '）');
+    }
+    throw new Error('读取坚果云备份索引失败（HTTP ' + response.status + '）');
+  }
+
+  let manifest;
+  try {
+    manifest = await response.json();
+  } catch (e) {
+    throw new Error('坚果云备份索引格式无效');
+  }
+
+  if (!manifest || manifest.format !== 'task-reminder-webdav-manifest-v1' || !Array.isArray(manifest.items)) {
+    return createEmptyNutstoreManifest();
+  }
+
+  manifest.items = manifest.items.filter(item => item && isSafeBackupFileName(item.fileName));
+  return manifest;
+}
+
+async function writeNutstoreManifest(settings, manifest) {
+  const clean = {
+    format: 'task-reminder-webdav-manifest-v1',
+    updatedAt: new Date().toISOString(),
+    items: Array.isArray(manifest && manifest.items)
+      ? manifest.items.filter(item => item && isSafeBackupFileName(item.fileName)).slice(0, 100)
+      : []
+  };
+
+  const response = await fetch(getNutstoreManifestUrl(settings), {
+    method: 'PUT',
+    headers: {
+      'Authorization': webDavAuthHeader(settings),
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body: JSON.stringify(clean, null, 2)
+  });
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + response.status + '）');
+    }
+    throw new Error('写入坚果云备份索引失败（HTTP ' + response.status + '）');
+  }
+}
+
+async function upsertNutstoreManifestEntry(settings, entry) {
+  const manifest = await readNutstoreManifest(settings);
+  manifest.items = (manifest.items || []).filter(item => item.fileName !== entry.fileName);
+  manifest.items.unshift(entry);
+  manifest.items.sort((a, b) => {
+    const am = parseInt(a.modifiedMs, 10) || 0;
+    const bm = parseInt(b.modifiedMs, 10) || 0;
+    if (bm !== am) return bm - am;
+    return String(b.fileName || '').localeCompare(String(a.fileName || ''));
+  });
+  await writeNutstoreManifest(settings, manifest);
+}
+
+async function removeNutstoreManifestEntry(settings, fileName) {
+  const manifest = await readNutstoreManifest(settings);
+  const before = manifest.items.length;
+  manifest.items = manifest.items.filter(item => item.fileName !== fileName);
+  if (manifest.items.length !== before) {
+    await writeNutstoreManifest(settings, manifest);
+  }
+}
+
 function getWebDavCollectionUrl(settings) {
   if (settings.provider === 'nutstore') {
     return normalizeWebDavBaseUrl(settings.url);
@@ -4301,6 +4445,30 @@ function isSafeBackupFileName(fileName) {
 }
 
 async function listWebDavBackups(settings) {
+  if (settings.provider === 'nutstore') {
+    const manifest = await readNutstoreManifest(settings);
+    const items = (manifest.items || []).map(item => {
+      const modifiedMs = parseInt(item.modifiedMs, 10) || 0;
+      const modifiedDate = modifiedMs ? new Date(modifiedMs) : (item.modifiedAt ? new Date(item.modifiedAt) : null);
+
+      return {
+        fileName: item.fileName,
+        modified: modifiedDate && !isNaN(modifiedDate.getTime())
+          ? modifiedDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
+          : '-',
+        modifiedMs: modifiedDate && !isNaN(modifiedDate.getTime()) ? modifiedDate.getTime() : 0,
+        size: parseInt(item.size, 10) || 0
+      };
+    }).filter(item => isSafeBackupFileName(item.fileName));
+
+    items.sort((a, b) => {
+      if (b.modifiedMs !== a.modifiedMs) return b.modifiedMs - a.modifiedMs;
+      return b.fileName.localeCompare(a.fileName);
+    });
+
+    return items;
+  }
+
   await ensureWebDavFolder(settings);
 
   const response = await fetch(getWebDavCollectionUrl(settings), {
@@ -4331,13 +4499,7 @@ async function listWebDavBackups(settings) {
     let href = decodeXmlEntities(hrefMatch[1].trim());
     try { href = decodeURIComponent(href); } catch (e) {}
     const remoteFileName = href.split('/').filter(Boolean).pop() || '';
-    let fileName = remoteFileName;
-
-    if (settings.provider === 'nutstore') {
-      const prefix = getNutstoreBackupPrefix(settings);
-      if (!remoteFileName.startsWith(prefix)) continue;
-      fileName = remoteFileName.slice(prefix.length);
-    }
+    const fileName = remoteFileName;
 
     if (!isSafeBackupFileName(fileName)) continue;
 
@@ -4414,13 +4576,14 @@ async function buildBackupPayload(kv, scope) {
 
 async function putWebDavBackup(settings, fileName, payload) {
   await ensureWebDavFolder(settings);
+  const body = JSON.stringify(payload, null, 2);
   const response = await fetch(getWebDavFileUrl(settings, fileName), {
     method: 'PUT',
     headers: {
       'Authorization': webDavAuthHeader(settings),
       'Content-Type': 'application/json; charset=utf-8'
     },
-    body: JSON.stringify(payload, null, 2)
+    body
   });
 
   if (!response.ok) {
@@ -4429,6 +4592,16 @@ async function putWebDavBackup(settings, fileName, payload) {
       throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + response.status + '）');
     }
     throw new Error('上传 WebDAV 备份失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
+  }
+
+  if (settings.provider === 'nutstore') {
+    const now = Date.now();
+    await upsertNutstoreManifestEntry(settings, {
+      fileName,
+      modifiedAt: new Date(now).toISOString(),
+      modifiedMs: now,
+      size: new TextEncoder().encode(body).length
+    });
   }
 }
 
@@ -4458,6 +4631,71 @@ async function deleteWebDavBackupFile(settings, fileName) {
   if (!(response.ok || response.status === 404)) {
     throw new Error('删除远端备份失败（HTTP ' + response.status + '）');
   }
+
+  if (settings.provider === 'nutstore') {
+    await removeNutstoreManifestEntry(settings, fileName);
+  }
+}
+
+async function testWebDavConnectionForWorker(settings) {
+  if (settings.provider !== 'nutstore') {
+    await ensureWebDavFolder(settings);
+  }
+
+  const physicalName = settings.provider === 'nutstore'
+    ? getNutstoreBackupPrefix(settings) + 'connection-test-' + Date.now() + '.txt'
+    : 'task-reminder_connection-test-' + Date.now() + '.txt';
+  const testUrl = getWebDavCollectionUrl(settings) + encodeURIComponent(physicalName);
+  const testBody = 'Task Reminder WebDAV connection test ' + new Date().toISOString();
+
+  const putResponse = await fetch(testUrl, {
+    method: 'PUT',
+    headers: {
+      'Authorization': webDavAuthHeader(settings),
+      'Content-Type': 'text/plain; charset=utf-8'
+    },
+    body: testBody
+  });
+
+  if (!putResponse.ok) {
+    const detail = await putResponse.text().catch(() => '');
+    if (putResponse.status === 401 || putResponse.status === 403) {
+      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + putResponse.status + '）');
+    }
+    throw new Error('WebDAV 写入测试失败（HTTP ' + putResponse.status + (detail ? '：' + detail.slice(0, 120) : '') + '）');
+  }
+
+  try {
+    const getResponse = await fetch(testUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': webDavAuthHeader(settings),
+        'Cache-Control': 'no-cache'
+      }
+    });
+
+    if (!getResponse.ok) {
+      throw new Error('WebDAV 读取测试失败（HTTP ' + getResponse.status + '）');
+    }
+
+    const returned = await getResponse.text();
+    if (returned !== testBody) {
+      throw new Error('WebDAV 读写校验失败：返回内容与测试内容不一致');
+    }
+  } finally {
+    await fetch(testUrl, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': webDavAuthHeader(settings)
+      }
+    }).catch(() => null);
+  }
+
+  return {
+    message: settings.provider === 'nutstore'
+      ? '坚果云 WebDAV 连接正常，读/写/删测试通过'
+      : 'WebDAV 连接正常，目录访问及读/写/删测试通过'
+  };
 }
 
 async function trimWebDavBackups(settings, maxCount) {
