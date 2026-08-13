@@ -389,6 +389,7 @@ function getDashboardPage() {
       <button class="btn-primary" onclick="openAddModal()">➕ 新建</button>
       <button class="btn-config" onclick="openConfigModal()">⚙️ 配置</button>
       <button class="btn-history" onclick="viewPushLogs()">📨 推送日志</button>
+      <button class="btn-outline" onclick="viewTrash()">♻️ 回收站</button>
       <button class="btn-danger" onclick="logout()">退出</button>
     </div>
   </div>
@@ -531,6 +532,19 @@ function getDashboardPage() {
     <div class="form-actions">
       <button class="btn-danger" onclick="clearPushLogs()">清空日志</button>
       <button class="btn-outline" onclick="closeModal('pushLogModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 回收站弹窗 -->
+<div class="modal" id="trashModal">
+  <div class="modal-content">
+    <h2>♻️ 回收站</h2>
+    <div class="mode-hint" style="margin-bottom:14px;">删除的任务保留 30 天。回收站内任务不会参与提醒、重试或自动续订；恢复已过期任务时不会补发历史提醒。</div>
+    <div id="trashList"></div>
+    <div class="form-actions">
+      <button class="btn-danger" onclick="clearTrash()">清空回收站</button>
+      <button class="btn-outline" onclick="closeModal('trashModal')">关闭</button>
     </div>
   </div>
 </div>
@@ -1856,7 +1870,7 @@ async function renewTask(id) {
 }
 
 async function deleteTask(id) {
-  if (!confirm('确认删除？')) return;
+  if (!confirm('确认移入回收站？任务将在回收站保留 30 天。')) return;
 
   const resp = await fetch('/api/tasks/' + id, {
     method: 'DELETE',
@@ -1866,7 +1880,7 @@ async function deleteTask(id) {
   const data = await resp.json();
 
   if (data.success) {
-    showToast('已删除');
+    showToast('已移入回收站');
     loadTasks();
   } else {
     showToast(data.message || '删除失败', 'error');
@@ -1970,6 +1984,112 @@ async function testTask(id) {
     }
   } catch (e) {
     showToast('请求失败', 'error');
+  }
+}
+
+// ===== 回收站 =====
+async function viewTrash() {
+  try {
+    const resp = await fetch('/api/trash', {
+      headers: getHeaders()
+    });
+
+    const data = await resp.json();
+    const list = document.getElementById('trashList');
+    const items = data.items || [];
+
+    if (items.length === 0) {
+      list.innerHTML = '<p style="color:#999;">回收站为空</p>';
+    } else {
+      list.innerHTML = items.map(item => {
+        const deletedAt = item.deletedAt ? formatFullDate(item.deletedAt) : '-';
+        const reminder = item.nextReminder
+          ? formatSolarDisplay(item.nextReminder, item.remindTime || '08:00')
+          : '-';
+        const modeLabel = item.mode === 'countdown' ? '单次提醒' : ((item.calendarType === 'lunar' || item.mode === 'lunar') ? '周期/农历' : '周期');
+
+        return '<div class="history-item" style="padding:12px 0;">' +
+          '<div><strong>' + escapeHtml(item.name || '-') + '</strong> <span style="font-size:12px;color:#999;">[' + modeLabel + ']</span></div>' +
+          '<div>📅 原提醒：' + reminder + '</div>' +
+          '<div>🗑️ 删除时间：' + deletedAt + '</div>' +
+          '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
+            '<button class="btn-success btn-sm" onclick="restoreTrashTask(\\'' + item.id + '\\')">↩️ 恢复</button>' +
+            '<button class="btn-danger btn-sm" onclick="permanentlyDeleteTrashTask(\\'' + item.id + '\\')">永久删除</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    openModal('trashModal');
+  } catch (e) {
+    showToast('读取回收站失败', 'error');
+  }
+}
+
+async function restoreTrashTask(id) {
+  if (!confirm('确认恢复这个任务？如果原提醒时间已经过去，将恢复为已过期状态且不会补发历史提醒。')) return;
+
+  try {
+    const resp = await fetch('/api/trash/' + id + '/restore', {
+      method: 'POST',
+      headers: getHeaders()
+    });
+
+    const data = await resp.json();
+
+    if (data.success) {
+      showToast(data.suppressCatchUp ? '已恢复；原提醒已过期，不会补发历史提醒' : '任务已恢复');
+      await viewTrash();
+      loadTasks();
+    } else {
+      showToast(data.message || '恢复失败', 'error');
+    }
+  } catch (e) {
+    showToast('恢复失败', 'error');
+  }
+}
+
+async function permanentlyDeleteTrashTask(id) {
+  if (!confirm('永久删除后无法恢复，并会清理该任务的续订历史和推送状态。确定继续？')) return;
+
+  try {
+    const resp = await fetch('/api/trash/' + id, {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+
+    const data = await resp.json();
+
+    if (data.success) {
+      showToast('已永久删除');
+      await viewTrash();
+    } else {
+      showToast(data.message || '永久删除失败', 'error');
+    }
+  } catch (e) {
+    showToast('永久删除失败', 'error');
+  }
+}
+
+async function clearTrash() {
+  if (!confirm('确定清空回收站吗？所有任务将永久删除且无法恢复。')) return;
+
+  try {
+    const resp = await fetch('/api/trash', {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+
+    const data = await resp.json();
+
+    if (data.success) {
+      document.getElementById('trashList').innerHTML = '<p style="color:#999;">回收站为空</p>';
+      showToast('回收站已清空');
+    } else {
+      showToast(data.message || '清空失败', 'error');
+    }
+  } catch (e) {
+    showToast('清空回收站失败', 'error');
   }
 }
 
@@ -2942,6 +3062,10 @@ export default {
       task.lunarDay = body.lunarDay !== undefined ? body.lunarDay : task.lunarDay;
       task.lunarLeap = body.lunarLeap !== undefined ? body.lunarLeap : task.lunarLeap;
 
+      // 用户主动编辑后，以新设置为准，恢复正常提醒逻辑。
+      delete task.suppressCatchUp;
+      delete task.restoredAt;
+
       const interval = config.checkInterval || 5;
       const parts = task.remindTime.split(':');
 
@@ -2965,15 +3089,94 @@ export default {
       });
     }
 
-    // ---------- 删除任务 ----------
+    // ---------- 删除任务：移入回收站 ----------
     if (path.startsWith('/api/tasks/') && method === 'DELETE') {
       const id = path.split('/')[3];
+      const existing = await kv.get('task_' + id);
 
+      if (!existing) return errorResponse('任务不存在', 404);
+
+      const task = JSON.parse(existing);
+      task.deletedAt = new Date().toISOString();
+
+      await kv.put('trash_' + id, JSON.stringify(task));
       await kv.delete('task_' + id);
-      await kv.delete('history_' + id);
 
       return new Response(JSON.stringify({
         success: true
+      }), {
+        headers: corsHeaders
+      });
+    }
+
+    // ---------- 回收站 ----------
+    if (path === '/api/trash' && method === 'GET') {
+      const items = await getAllTrash(kv);
+
+      return new Response(JSON.stringify({
+        success: true,
+        items
+      }), {
+        headers: corsHeaders
+      });
+    }
+
+    if (path.startsWith('/api/trash/') && path.endsWith('/restore') && method === 'POST') {
+      const id = path.split('/')[3];
+      const raw = await kv.get('trash_' + id);
+
+      if (!raw) return errorResponse('回收站中不存在该任务', 404);
+
+      const task = JSON.parse(raw);
+      const restoredAt = new Date().toISOString();
+      const remindMs = task.nextReminder
+        ? new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00').getTime()
+        : 0;
+      const suppressCatchUp = !!remindMs && remindMs <= Date.now() && !task.completedAt;
+
+      delete task.deletedAt;
+      task.restoredAt = restoredAt;
+
+      if (suppressCatchUp) task.suppressCatchUp = true;
+      else delete task.suppressCatchUp;
+
+      await kv.put('task_' + id, JSON.stringify(task));
+      await kv.delete('trash_' + id);
+
+      return new Response(JSON.stringify({
+        success: true,
+        task,
+        suppressCatchUp
+      }), {
+        headers: corsHeaders
+      });
+    }
+
+    if (path.startsWith('/api/trash/') && method === 'DELETE') {
+      const id = path.split('/')[3];
+      const raw = await kv.get('trash_' + id);
+
+      if (!raw) return errorResponse('回收站中不存在该任务', 404);
+
+      await permanentlyDeleteTaskData(kv, id);
+
+      return new Response(JSON.stringify({
+        success: true
+      }), {
+        headers: corsHeaders
+      });
+    }
+
+    if (path === '/api/trash' && method === 'DELETE') {
+      const items = await getAllTrash(kv);
+
+      for (const item of items) {
+        if (item && item.id) await permanentlyDeleteTaskData(kv, item.id);
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        deleted: items.length
       }), {
         headers: corsHeaders
       });
@@ -3035,6 +3238,8 @@ export default {
       task.startTime = task.remindTime || '08:00';
       task.nextReminder = newNext;
       task.remindTime = newTime;
+      delete task.suppressCatchUp;
+      delete task.restoredAt;
 
       if (task.calendarType === 'lunar' || task.mode === 'lunar') {
         const lunar = LunarCalendar.solarToLunar(
@@ -3222,11 +3427,18 @@ export default {
     // 例如 5 分钟固定在 00、05、10、15...，不是从部署时间滚动。
     if (!await shouldRunScheduledCheck(kv, interval, nowMs)) return;
 
+    // 每天最多执行一次回收站自动清理，永久删除超过 30 天的任务。
+    await cleanupExpiredTrash(kv, nowMs);
+
     const tasks = await getAllTasks(kv);
     const retryWindowMinutes = getRetryWindowMinutes(config);
 
     for (const task of tasks) {
       if (!task.nextReminder || task.completedAt) continue;
+
+      // 从回收站恢复且原提醒时间已经过去的任务，不补发历史提醒。
+      // 用户编辑或手动续订后会自动清除此标记。
+      if (task.suppressCatchUp) continue;
 
       const remindDateTime = makeRemindDateTime(task);
       const advanceReminders = normalizeReminderPairs(task.reminderDays || [], task.reminderUnits || []);
@@ -3242,6 +3454,12 @@ export default {
         if (!val || val <= 0) continue;
 
         const triggerTime = makeAdvanceTriggerTime(task, val, unit);
+
+        // 恢复任务后，不补发恢复时间之前已经错过的提前提醒。
+        if (task.restoredAt && triggerTime.getTime() <= new Date(task.restoredAt).getTime()) {
+          continue;
+        }
+
         const diffMinutes = (now.getTime() - triggerTime.getTime()) / 60000;
 
         if (diffMinutes >= 0 && diffMinutes <= retryWindowMinutes) {
@@ -3336,6 +3554,8 @@ export default {
               task.startTime = oldTime;
               task.nextReminder = newNext;
               task.remindTime = newTime;
+              delete task.suppressCatchUp;
+              delete task.restoredAt;
 
               if (task.calendarType === 'lunar' || task.mode === 'lunar') {
                 const lunar = LunarCalendar.solarToLunar(
@@ -3416,6 +3636,95 @@ function errorResponse(msg, code) {
       'Content-Type': 'application/json'
     }
   });
+}
+
+async function listKvKeysByPrefix(kv, prefix) {
+  const names = [];
+  let cursor = undefined;
+
+  do {
+    const options = { prefix };
+    if (cursor) options.cursor = cursor;
+
+    const list = await kv.list(options);
+    for (const key of list.keys) names.push(key.name);
+
+    cursor = list.list_complete ? undefined : list.cursor;
+  } while (cursor);
+
+  return names;
+}
+
+async function getAllTrash(kv) {
+  const items = [];
+  const names = await listKvKeysByPrefix(kv, 'trash_');
+
+  for (const name of names) {
+    const raw = await kv.get(name);
+    if (!raw) continue;
+
+    try {
+      const item = JSON.parse(raw);
+      if (!item.id) item.id = name.slice('trash_'.length);
+      items.push(item);
+    } catch (e) {}
+  }
+
+  items.sort((a, b) => {
+    const at = a.deletedAt ? new Date(a.deletedAt).getTime() : 0;
+    const bt = b.deletedAt ? new Date(b.deletedAt).getTime() : 0;
+    return bt - at;
+  });
+
+  return items;
+}
+
+async function deleteTaskStateKeys(kv, taskId) {
+  const prefixes = ['done_', 'retry_', 'autorenew_'];
+
+  for (const prefix of prefixes) {
+    const names = await listKvKeysByPrefix(kv, prefix);
+
+    for (const name of names) {
+      if (name.includes('_' + taskId + '_') || name.startsWith('autorenew_' + taskId + '_')) {
+        await kv.delete(name);
+      }
+    }
+  }
+}
+
+async function permanentlyDeleteTaskData(kv, taskId) {
+  await kv.delete('task_' + taskId);
+  await kv.delete('trash_' + taskId);
+  await kv.delete('history_' + taskId);
+  await deleteTaskStateKeys(kv, taskId);
+}
+
+async function cleanupExpiredTrash(kv, nowMs) {
+  const now = new Date(Number(nowMs) || Date.now());
+  const dayKey = 'trash_cleanup_' +
+    now.getUTCFullYear() + '-' +
+    String(now.getUTCMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getUTCDate()).padStart(2, '0');
+
+  try {
+    if (await kv.get(dayKey)) return;
+  } catch (e) {}
+
+  const items = await getAllTrash(kv);
+  const maxAgeMs = 30 * 24 * 60 * 60 * 1000;
+  const currentMs = Number(nowMs) || Date.now();
+
+  for (const item of items) {
+    if (!item || !item.id || !item.deletedAt) continue;
+
+    const deletedMs = new Date(item.deletedAt).getTime();
+    if (Number.isFinite(deletedMs) && currentMs - deletedMs >= maxAgeMs) {
+      await permanentlyDeleteTaskData(kv, item.id);
+    }
+  }
+
+  await kv.put(dayKey, '1', { expirationTtl: 2 * 24 * 60 * 60 });
 }
 
 async function getAllTasks(kv) {
