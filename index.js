@@ -383,7 +383,76 @@ function getDashboardPage() {
   .time-error { color: #e74c3c; font-size: 12px; margin-top: -12px; margin-bottom: 12px; display: none; }
   .lunar-display { font-size: 13px; color: #6c5ce7; margin-top: -8px; margin-bottom: 12px; padding: 4px 8px; background: #f3f0ff; border-radius: 6px; }
   .reminder-preview { margin: 14px 0 16px 0; padding: 12px; background: #f3f0ff; border-radius: 8px; color: #4b3fbf; font-size: 14px; line-height: 1.7; white-space: pre-line; }
-  @media (max-width:600px){ .task-grid{grid-template-columns:1fr;} .reminder-group{flex-wrap:wrap;} .dashboard{grid-template-columns:1fr 1fr;} .header h1{width:100%;} .header-actions{width:100%;grid-template-columns:repeat(2,minmax(0,1fr));} .header-actions button{width:100%;padding:10px 8px;} }
+  @media (max-width:600px) {
+    body { padding: 10px; overflow-x: hidden; }
+    .container { width: 100%; max-width: 100%; }
+
+    .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px; margin-bottom: 14px; border-radius: 10px; }
+    .dashboard .stat .number { font-size: 23px; }
+    .dashboard .stat .label { font-size: 12px; }
+
+    .header { padding: 14px; margin-bottom: 14px; border-radius: 10px; }
+    .header h1 { width: 100%; font-size: 21px; }
+    .header-actions { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .header-actions button { width: 100%; min-width: 0; min-height: 44px; padding: 10px 6px; font-size: 14px; white-space: normal; line-height: 1.2; }
+
+    .task-grid { grid-template-columns: 1fr; gap: 12px; }
+    .task-card { padding: 16px 14px; border-radius: 10px; }
+    .task-card .title { font-size: 18px; }
+    .task-card .info { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+    .task-card .actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; align-items: stretch; }
+    .task-card .actions .btn-sm { width: 100%; min-width: 0; min-height: 38px; padding: 8px 3px; font-size: 12px; white-space: nowrap; }
+
+    .modal { align-items: flex-start; padding: 10px 6px; overflow-y: auto; overscroll-behavior: contain; }
+    .modal-content { width: 100%; max-width: none; max-height: calc(100dvh - 20px); padding: 20px 14px 16px; border-radius: 14px; }
+    .modal-content h2 { font-size: 21px; margin-bottom: 14px; }
+    .modal-content h3 { line-height: 1.35; }
+    .modal-content label { display: block; line-height: 1.35; margin-bottom: 6px; overflow-wrap: anywhere; }
+    .modal-content input, .modal-content select, .modal-content textarea { font-size: 16px; padding: 11px 12px; margin-bottom: 12px; min-height: 46px; }
+    .modal-content textarea { min-height: 86px; }
+    .modal-content .form-row { gap: 10px; }
+    .modal-content .form-row > * { min-width: 0; }
+
+    #taskModal .task-date-time-row { display: grid; grid-template-columns: 1fr; gap: 0; }
+    #taskModal .task-period-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #taskModal .lunar-fields .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #taskModal .lunar-leap-field { min-width: 0; padding-bottom: 12px; align-self: end; min-height: 46px; }
+    #taskModal .periodic-switch { margin-bottom: 12px; }
+
+    .reminder-group { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) 44px; gap: 8px; align-items: center; }
+    .reminder-group input, .reminder-group select { width: 100%; min-width: 0; margin-bottom: 0; }
+    .reminder-group button { width: 44px; min-width: 44px; min-height: 44px; padding: 4px; }
+    .reminder-preview { font-size: 13px; line-height: 1.65; padding: 10px; }
+
+    .modal-content .form-actions { gap: 8px; flex-wrap: wrap; }
+    .modal-content .form-actions button { flex: 1 1 120px; min-width: 0; min-height: 44px; padding: 10px 8px; }
+
+    #configModal .config-checkbox-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    #configModal .config-checkbox-group label { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 42px; margin: 0; padding: 8px 9px; border: 1px solid #e7e7e7; border-radius: 8px; white-space: nowrap; font-size: 14px; }
+    #configModal .config-checkbox-group input { width: auto; min-height: 0; margin: 0; padding: 0; flex: 0 0 auto; }
+    #configModal .config-detail { padding-left: 10px; }
+    #configModal .notifier-action-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px !important; }
+    #configModal .notifier-action-row button { width: 100%; min-height: 40px; padding: 8px 5px; }
+
+    #backupModal .backup-action-grid { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px !important; }
+    #backupModal .backup-action-grid button { width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 9px 5px; }
+    #backupModal .backup-list-controls { display: block; }
+    #backupModal .backup-list-controls > div { width: 100%; }
+    #backupModal .backup-batch-actions { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px !important; margin: 0 0 12px !important; }
+    #backupModal .backup-batch-actions button { width: 100%; min-width: 0; min-height: 40px; padding: 7px 3px; font-size: 12px; white-space: nowrap; }
+    #backupModal #backupList .history-item { padding: 12px 0; line-height: 1.5; }
+    #backupModal .backup-type-badge, #backupModal .backup-latest-badge { margin-top: 2px; margin-bottom: 2px; }
+
+    #restoreBackupModal .modal-content, #unfreezeModal .modal-content, #onedriveFolderModal .modal-content { max-width: none !important; }
+    .toast { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); min-width: 0; width: calc(100vw - 28px); max-width: 520px; padding: 13px 16px; }
+  }
+
+  @media (max-width:380px) {
+    .task-card .actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #configModal .config-checkbox-group { grid-template-columns: 1fr; }
+    #backupModal .backup-batch-actions { grid-template-columns: 1fr; }
+    #taskModal .task-period-row { grid-template-columns: 1fr; }
+  }
 </style></head>
 <body>
 <div class="container" id="app">
@@ -480,12 +549,12 @@ function getDashboardPage() {
         </div>
       </div>
 
-      <div class="form-row">
+      <div class="form-row task-date-time-row">
         <div id="solarDateRow"><label>开始日期（公历）</label><input type="date" id="startDate" onchange="updateNextDateFromStart()"></div>
         <div><label>开始时间（北京时间）</label><input type="time" id="startTime" value="08:00" step="60" onchange="validateTime(); updateNextDateFromStart()" oninput="validateTime(); updateNextDateFromStart()"></div>
       </div>
 
-      <div class="form-row">
+      <div class="form-row task-period-row">
         <div><label>周期数值</label><input type="number" id="periodValue" value="1" min="1" onchange="updateNextDateFromStart()"></div>
         <div><label>周期单位</label>
           <select id="periodUnit" onchange="applyPeriodInputRules(); updateNextDateFromStart()">
@@ -496,7 +565,7 @@ function getDashboardPage() {
     </div>
 
     <div id="countdownFields" style="display:none;">
-      <div class="form-row">
+      <div class="form-row task-date-time-row">
         <div><label>提醒日期（公历）</label><input type="date" id="singleReminderDate" onchange="updateNextDateFromStart()"></div>
         <div><label>提醒时间（北京时间）</label><input type="time" id="singleReminderTime" value="08:00" step="60" onchange="validateTime(); updateNextDateFromStart()" oninput="validateTime(); updateNextDateFromStart()"></div>
       </div>
@@ -628,7 +697,7 @@ function getDashboardPage() {
 
     <div class="mode-hint" style="margin-bottom:12px;">恢复时无需提前选择内容。点击某个备份的“恢复”后，系统会先读取并检测该备份实际包含的数据，再弹出可恢复项目供你选择。</div>
 
-    <div class="form-actions" style="justify-content:flex-start;flex-wrap:wrap;">
+    <div class="form-actions backup-action-grid" style="justify-content:flex-start;flex-wrap:wrap;">
       <button class="btn-config" onclick="saveBackupSettings()">保存连接</button>
       <button class="btn-success" id="onedriveConnectBtn" onclick="connectOneDrive()">连接 OneDrive</button>
       <button class="btn-warning" onclick="testBackupConnection()">测试连接</button>
@@ -639,7 +708,7 @@ function getDashboardPage() {
 
     <hr style="margin:18px 0;">
     <h3 style="margin-bottom:10px;">远端备份</h3>
-    <div class="form-row" style="align-items:flex-end;margin-bottom:8px;">
+    <div class="form-row backup-list-controls" style="align-items:flex-end;margin-bottom:8px;">
       <div>
         <label>列表筛选</label>
         <select id="backupListFilter" onchange="renderRemoteBackupList()">
@@ -648,7 +717,7 @@ function getDashboardPage() {
           <option value="config">仅配置 / Key</option>
         </select>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+      <div class="backup-batch-actions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
         <button class="btn-outline btn-sm" type="button" onclick="selectVisibleBackups(true)">全选当前</button>
         <button class="btn-outline btn-sm" type="button" onclick="selectVisibleBackups(false)">取消选择</button>
         <button class="btn-danger btn-sm" type="button" onclick="deleteSelectedRemoteBackups()">删除所选</button>
@@ -718,7 +787,7 @@ function getDashboardPage() {
     <select id="unfreezePolicy">
       <option value="expired">恢复为已过期，不补发（推荐）</option>
       <option value="push">立即推送一次，再保持已过期状态</option>
-      <option value="next" id="unfreezeNextOption">跳到下一个未来周期</option>
+      <option value="next" id="unfreezeNextOption">跳到下一个有效未来周期</option>
     </select>
     <div class="form-actions">
       <button class="btn-outline" onclick="closeModal('unfreezeModal')">取消</button>
@@ -2197,7 +2266,7 @@ async function submitUnfreezeTask(id, policy) {
     const data = await resp.json();
     if (data.success) {
       let msg = '任务已解冻';
-      if (data.movedToNext) msg += '，已跳到下一个未来周期：' + (data.nextReminder || '') + ' ' + (data.remindTime || '');
+      if (data.movedToNext) msg += '，已跳过' + (data.skippedCycles || 1) + '个已过期周期，定位到下一个有效时间：' + (data.nextReminder || '') + ' ' + (data.remindTime || '');
       else if (data.pushAttempted) msg += data.pushSuccess ? '，已立即推送一次' : '，立即推送失败，任务保持已过期';
       else if (data.suppressCatchUp) msg += '，旧提醒不会补发';
       showToast(msg);
@@ -3221,7 +3290,7 @@ function renderNotifierFields(selectedTypes) {
         html += '<label>' + f.label + '</label><input type="text" id="cfg_' + f.key + '" value="' + val + '">';
       });
 
-      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px 0;">' +
+      html += '<div class="notifier-action-row" style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px 0;">' +
         '<button type="button" class="btn-success btn-sm" onclick="testNotifierChannel(\\'' + type + '\\')">🧪 测试此渠道</button>' +
         '<button type="button" class="btn-danger btn-sm" onclick="clearNotifierChannelConfig(\\'' + type + '\\')">🗑️ 清除配置</button>' +
       '</div></div>';
@@ -3739,6 +3808,76 @@ function calcNextFromReminderDate(task) {
   }
 
   return null;
+}
+
+function advanceTaskToFirstFutureCycle(task, nowMs) {
+  if (!task || !task.nextReminder) return { success: false, message: '缺少当前提醒时间' };
+
+  const val = Math.max(1, parseInt(task.periodValue) || 1);
+  const unit = task.periodUnit || 'month';
+  const currentTime = task.remindTime || '08:00';
+  const firstMs = new Date(task.nextReminder + 'T' + currentTime + ':00+08:00').getTime();
+  const targetNow = Number(nowMs) || Date.now();
+
+  if (!Number.isFinite(firstMs)) return { success: false, message: '当前提醒时间无效' };
+  if (firstMs > targetNow) return { success: true, skippedCycles: 0 };
+
+  // 分钟/小时/日/周都是固定长度周期，可一次算出需要跳过多少个周期，
+  // 避免 5 分钟任务冻结较久后逐周期循环几百、几千次。
+  const fixedUnitMs = {
+    minute: 60 * 1000,
+    hour: 60 * 60 * 1000,
+    day: 24 * 60 * 60 * 1000,
+    week: 7 * 24 * 60 * 60 * 1000
+  };
+
+  if (fixedUnitMs[unit]) {
+    const stepMs = fixedUnitMs[unit] * val;
+    const skippedCycles = Math.floor((targetNow - firstMs) / stepMs) + 1;
+    const base = parseDateTimeLocal(task.nextReminder, currentTime);
+    const previous = addPeriodToDateTimeForWorker(base, val * Math.max(0, skippedCycles - 1), unit);
+    const future = addPeriodToDateTimeForWorker(base, val * skippedCycles, unit);
+
+    task.startDate = formatDateLocal(previous);
+    task.startTime = formatTimeLocal(previous);
+    task.nextReminder = formatDateLocal(future);
+    task.remindTime = formatTimeLocal(future);
+
+    const futureMs = new Date(task.nextReminder + 'T' + task.remindTime + ':00+08:00').getTime();
+    if (!Number.isFinite(futureMs) || futureMs <= targetNow) {
+      return { success: false, message: '无法定位到下一个有效未来时间' };
+    }
+
+    return { success: true, skippedCycles };
+  }
+
+  // 月/年以及农历月/年周期长度不固定，逐周期推进，但只推进到第一个真正未来的周期。
+  let skippedCycles = 0;
+  let currentMs = firstMs;
+  while (currentMs <= targetNow && skippedCycles < 5000) {
+    const oldNext = task.nextReminder;
+    const oldTime = task.remindTime || '08:00';
+    const next = calcNextFromReminderDate(task);
+
+    if (!next || !next.nextReminder) return { success: false, message: '无法计算下一个有效未来周期' };
+    const nextTime = next.remindTime || oldTime;
+    if (next.nextReminder === oldNext && nextTime === oldTime) {
+      return { success: false, message: '下一周期未发生变化，无法解冻' };
+    }
+
+    task.startDate = oldNext;
+    task.startTime = oldTime;
+    task.nextReminder = next.nextReminder;
+    task.remindTime = nextTime;
+    currentMs = new Date(task.nextReminder + 'T' + task.remindTime + ':00+08:00').getTime();
+    skippedCycles++;
+  }
+
+  if (!Number.isFinite(currentMs) || currentMs <= targetNow) {
+    return { success: false, message: '无法在支持范围内找到下一个有效未来周期' };
+  }
+
+  return { success: true, skippedCycles };
 }
 
 // ============================================================
@@ -4305,6 +4444,7 @@ export default {
       let pushAttempted = false;
       let pushSuccess = false;
       let movedToNext = false;
+      let skippedCycles = 0;
 
       delete task.frozen;
       delete task.frozenAt;
@@ -4316,24 +4456,9 @@ export default {
       } else if (policy === 'next') {
         if (task.mode === 'countdown') return errorResponse('单次提醒不能跳到下一周期，请选择恢复为已过期或立即推送', 400);
 
-        let guard = 0;
-        let currentMs = remindMs;
-        while (currentMs <= Date.now() && guard < 500) {
-          const oldNext = task.nextReminder;
-          const oldTime = task.remindTime || '08:00';
-          const next = calcNextFromReminderDate(task);
-          if (!next || !next.nextReminder) return errorResponse('无法计算下一个未来周期', 400);
-          const nextTime = next.remindTime || oldTime;
-          if (next.nextReminder === oldNext && nextTime === oldTime) return errorResponse('下一周期未发生变化，无法解冻', 400);
-
-          task.startDate = oldNext;
-          task.startTime = oldTime;
-          task.nextReminder = next.nextReminder;
-          task.remindTime = nextTime;
-          currentMs = new Date(task.nextReminder + 'T' + task.remindTime + ':00+08:00').getTime();
-          guard++;
-        }
-        if (currentMs <= Date.now()) return errorResponse('无法在合理范围内找到未来周期', 400);
+        const moveResult = advanceTaskToFirstFutureCycle(task, Date.now());
+        if (!moveResult.success) return errorResponse(moveResult.message || '无法找到下一个有效未来周期', 400);
+        skippedCycles = moveResult.skippedCycles || 1;
 
         if (task.calendarType === 'lunar' || task.mode === 'lunar') {
           const parts = task.nextReminder.split('-').map(Number);
@@ -4356,7 +4481,7 @@ export default {
           renewedAt: nowIso,
           nextReminder: task.nextReminder,
           remindTime: task.remindTime || '08:00',
-          reason: '解冻后跳到下一个未来周期'
+          reason: '解冻后跳到下一个有效未来周期（跳过 ' + skippedCycles + ' 个已过期周期）'
         });
         if (history.length > 21) history = history.slice(-21);
         await kv.put('history_' + id, JSON.stringify(history));
@@ -4402,6 +4527,7 @@ export default {
         pushAttempted,
         pushSuccess,
         movedToNext,
+        skippedCycles,
         nextReminder: task.nextReminder,
         remindTime: task.remindTime || '08:00'
       }), { headers: corsHeaders });
