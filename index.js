@@ -613,19 +613,7 @@ function getDashboardPage() {
       <div class="mode-hint" id="backupAutoStatus" style="margin-top:6px;">最近自动备份：暂无</div>
     </div>
 
-    <label>恢复内容</label>
-    <div class="config-checkbox-group" style="margin-bottom:12px;">
-      <label><input type="checkbox" id="restoreTasks" checked> 任务数据</label>
-      <label><input type="checkbox" id="restoreConfig" checked> 系统配置</label>
-      <label><input type="checkbox" id="restoreKeys" checked> 推送 Key</label>
-    </div>
-    <div class="mode-hint" style="margin-top:-6px;margin-bottom:12px;">任务数据 = 正常任务 + 回收站 + 续订历史；系统配置 = 登录账号、检测间隔等；推送 Key = 推送渠道选择及对应 Token / API Key。可单独或组合恢复。</div>
-
-    <label>恢复任务时，已过期且未完成任务如何处理</label>
-    <select id="backupExpiredPolicy">
-      <option value="expired">恢复为已过期，不补发（推荐）</option>
-      <option value="push">恢复后立即推送一次，再保持已过期状态</option>
-    </select>
+    <div class="mode-hint" style="margin-bottom:12px;">恢复时无需提前选择内容。点击某个备份的“恢复”后，系统会先读取并检测该备份实际包含的数据，再弹出可恢复项目供你选择。</div>
 
     <div class="form-actions" style="justify-content:flex-start;flex-wrap:wrap;">
       <button class="btn-config" onclick="saveBackupSettings()">保存连接</button>
@@ -641,6 +629,33 @@ function getDashboardPage() {
     <div id="backupList"><p style="color:#999;">尚未读取</p></div>
 
     <div class="form-actions"><button class="btn-outline" onclick="closeModal('backupModal')">关闭</button></div>
+  </div>
+</div>
+
+<!-- 备份恢复选择弹窗 -->
+<div class="modal" id="restoreBackupModal">
+  <div class="modal-content" style="max-width:560px;">
+    <h2>♻️ 恢复备份</h2>
+    <div class="lunar-display" id="restoreBackupFileName" style="margin-top:10px;margin-bottom:14px;">备份：--</div>
+    <div class="mode-hint" id="restoreBackupSummary" style="margin-bottom:12px;">正在检测备份内容...</div>
+
+    <label>选择恢复内容</label>
+    <div id="restoreDetectedOptions" style="margin:8px 0 14px 0;"></div>
+
+    <div id="restoreExpiredPolicyWrap" style="display:none;">
+      <label>恢复任务时，已过期且未完成任务如何处理</label>
+      <select id="restoreExpiredPolicy">
+        <option value="expired">恢复为已过期，不补发（推荐）</option>
+        <option value="push">恢复后立即推送一次，再保持已过期状态</option>
+      </select>
+    </div>
+
+    <div class="mode-hint" style="margin-bottom:12px;">恢复采用合并方式：同 ID 数据会覆盖；未选择的类别和其他现有任务不会删除。远端备份连接与 OAuth 状态不会被旧备份覆盖。</div>
+
+    <div class="form-actions">
+      <button class="btn-outline" onclick="closeModal('restoreBackupModal')">取消</button>
+      <button class="btn-success" id="confirmRestoreBackupBtn" onclick="confirmRestoreRemoteBackup()">开始恢复</button>
+    </div>
   </div>
 </div>
 
@@ -2478,7 +2493,7 @@ async function loadRemoteBackups() {
         '<div><strong>' + escapeHtml(item.fileName || '-') + '</strong></div>' +
         '<div>🕒 ' + escapeHtml(item.modified || '-') + '　📦 ' + size + '</div>' +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
-          '<button class="btn-success btn-sm" onclick="restoreRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">恢复</button>' +
+          '<button class="btn-success btn-sm" onclick="prepareRestoreRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">恢复</button>' +
           '<button class="btn-danger btn-sm" onclick="deleteRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">删除</button>' +
         '</div>' +
       '</div>';
@@ -2488,13 +2503,121 @@ async function loadRemoteBackups() {
   }
 }
 
-async function restoreRemoteBackup(encodedFileName) {
+let pendingRestoreBackupFileName = '';
+let pendingRestoreBackupInfo = null;
+
+function updateRestoreExpiredPolicyVisibility() {
+  const taskCheckbox = document.getElementById('restoreDetectedTasks');
+  const wrap = document.getElementById('restoreExpiredPolicyWrap');
+  if (!wrap) return;
+  wrap.style.display = taskCheckbox && taskCheckbox.checked ? 'block' : 'none';
+}
+
+function renderDetectedRestoreOptions(info) {
+  const container = document.getElementById('restoreDetectedOptions');
+  const summary = document.getElementById('restoreBackupSummary');
+  if (!container || !summary) return;
+
+  const available = info && info.available ? info.available : {};
+  const rows = [];
+  const summaryParts = [];
+
+  if (available.tasks) {
+    const taskCount = parseInt(info.taskCount) || 0;
+    const trashCount = parseInt(info.trashCount) || 0;
+    const historyCount = parseInt(info.historyCount) || 0;
+    rows.push(
+      '<label style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;margin-bottom:8px;border:1px solid #e9ecef;border-radius:9px;background:#fafbfc;cursor:pointer;">' +
+        '<input type="checkbox" id="restoreDetectedTasks" checked style="width:auto;margin:3px 0 0 0;" onchange="updateRestoreExpiredPolicyVisibility()">' +
+        '<span><strong>任务数据</strong><br><span style="font-size:12px;color:#777;">正常任务 ' + taskCount + ' 个，回收站 ' + trashCount + ' 个，续订历史 ' + historyCount + ' 组</span></span>' +
+      '</label>'
+    );
+    summaryParts.push('任务数据');
+  }
+
+  if (available.config) {
+    const count = parseInt(info.configFieldCount) || 0;
+    rows.push(
+      '<label style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;margin-bottom:8px;border:1px solid #e9ecef;border-radius:9px;background:#fafbfc;cursor:pointer;">' +
+        '<input type="checkbox" id="restoreDetectedConfig" checked style="width:auto;margin:3px 0 0 0;">' +
+        '<span><strong>系统配置</strong><br><span style="font-size:12px;color:#777;">检测到 ' + count + ' 个可恢复配置字段</span></span>' +
+      '</label>'
+    );
+    summaryParts.push('系统配置');
+  }
+
+  if (available.keys) {
+    const count = parseInt(info.keyFieldCount) || 0;
+    rows.push(
+      '<label style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;margin-bottom:8px;border:1px solid #e9ecef;border-radius:9px;background:#fafbfc;cursor:pointer;">' +
+        '<input type="checkbox" id="restoreDetectedKeys" checked style="width:auto;margin:3px 0 0 0;">' +
+        '<span><strong>推送 Key</strong><br><span style="font-size:12px;color:#777;">检测到 ' + count + ' 个 Token / API Key / 推送相关字段</span></span>' +
+      '</label>'
+    );
+    summaryParts.push('推送 Key');
+  }
+
+  if (rows.length === 0) {
+    container.innerHTML = '<div style="padding:12px;border-radius:8px;background:#fff3f3;color:#c0392b;">该备份未检测到可恢复内容。</div>';
+    summary.textContent = '检测完成：未发现任务、系统配置或推送 Key。';
+    document.getElementById('confirmRestoreBackupBtn').disabled = true;
+  } else {
+    container.innerHTML = rows.join('');
+    summary.textContent = '检测完成：该备份包含 ' + summaryParts.join('、') + '。请选择本次需要恢复的内容。';
+    document.getElementById('confirmRestoreBackupBtn').disabled = false;
+  }
+
+  updateRestoreExpiredPolicyVisibility();
+}
+
+async function prepareRestoreRemoteBackup(encodedFileName) {
   const fileName = decodeURIComponent(encodedFileName);
-  const expiredPolicy = document.getElementById('backupExpiredPolicy').value || 'expired';
+  pendingRestoreBackupFileName = fileName;
+  pendingRestoreBackupInfo = null;
+
+  document.getElementById('restoreBackupFileName').textContent = '备份：' + fileName;
+  document.getElementById('restoreBackupSummary').textContent = '正在读取并检测备份内容...';
+  document.getElementById('restoreDetectedOptions').innerHTML = '<p style="color:#999;">正在检测...</p>';
+  document.getElementById('restoreExpiredPolicyWrap').style.display = 'none';
+  document.getElementById('confirmRestoreBackupBtn').disabled = true;
+  openModal('restoreBackupModal');
+
+  try {
+    const resp = await fetch('/api/backups/inspect', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ fileName })
+    });
+    const data = await resp.json();
+
+    if (!data.success) {
+      document.getElementById('restoreBackupSummary').textContent = data.message || '检测备份内容失败';
+      document.getElementById('restoreDetectedOptions').innerHTML = '<div style="padding:12px;border-radius:8px;background:#fff3f3;color:#c0392b;">无法读取该备份，请检查远端连接或备份文件是否完整。</div>';
+      return;
+    }
+
+    pendingRestoreBackupInfo = data;
+    renderDetectedRestoreOptions(data);
+  } catch (e) {
+    document.getElementById('restoreBackupSummary').textContent = '检测备份内容失败';
+    document.getElementById('restoreDetectedOptions').innerHTML = '<div style="padding:12px;border-radius:8px;background:#fff3f3;color:#c0392b;">读取备份时发生网络或解析错误。</div>';
+  }
+}
+
+async function confirmRestoreRemoteBackup() {
+  const fileName = pendingRestoreBackupFileName;
+  if (!fileName || !pendingRestoreBackupInfo) {
+    showToast('尚未完成备份内容检测', 'error');
+    return;
+  }
+
+  const taskEl = document.getElementById('restoreDetectedTasks');
+  const configEl = document.getElementById('restoreDetectedConfig');
+  const keysEl = document.getElementById('restoreDetectedKeys');
   const restoreSections = {
-    tasks: !!document.getElementById('restoreTasks').checked,
-    config: !!document.getElementById('restoreConfig').checked,
-    keys: !!document.getElementById('restoreKeys').checked
+    tasks: !!(taskEl && taskEl.checked),
+    config: !!(configEl && configEl.checked),
+    keys: !!(keysEl && keysEl.checked)
   };
 
   if (!restoreSections.tasks && !restoreSections.config && !restoreSections.keys) {
@@ -2502,6 +2625,7 @@ async function restoreRemoteBackup(encodedFileName) {
     return;
   }
 
+  const expiredPolicy = document.getElementById('restoreExpiredPolicy').value || 'expired';
   const selected = [];
   if (restoreSections.tasks) selected.push('任务数据');
   if (restoreSections.config) selected.push('系统配置');
@@ -2514,6 +2638,10 @@ async function restoreRemoteBackup(encodedFileName) {
     : '本次不恢复任务数据。';
 
   if (!confirm('确认恢复备份“' + fileName + '”？\\n恢复内容：' + selected.join('、') + '\\n当前采用合并恢复：同 ID 数据会覆盖，未选择的类别和其他现有任务不会删除。\\n' + policyText)) return;
+
+  const button = document.getElementById('confirmRestoreBackupBtn');
+  button.disabled = true;
+  button.textContent = '恢复中...';
 
   try {
     const resp = await fetch('/api/backups/restore', {
@@ -2529,6 +2657,7 @@ async function restoreRemoteBackup(encodedFileName) {
       if (data.restoredConfig) parts.push('系统配置');
       if (data.restoredKeys) parts.push('推送 Key');
       if (data.pushedExpired) parts.push('立即推送 ' + data.pushedExpired + ' 条');
+      closeModal('restoreBackupModal');
       showToast('恢复完成：' + (parts.join('，') || '无可恢复内容'));
       await loadTasks();
     } else {
@@ -2536,6 +2665,9 @@ async function restoreRemoteBackup(encodedFileName) {
     }
   } catch (e) {
     showToast('恢复失败', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = '开始恢复';
   }
 }
 
@@ -4053,6 +4185,50 @@ export default {
         });
       } catch (e) {
         return errorResponse(e.message || '远端备份失败', 500);
+      }
+    }
+
+    // ---------- 检测远端备份内容 ----------
+    if (path === '/api/backups/inspect' && method === 'POST') {
+      try {
+        const body = await request.json();
+        const fileName = String(body.fileName || '').trim();
+        if (!isSafeBackupFileName(fileName)) return errorResponse('备份文件名无效', 400);
+
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
+        const backup = await getRemoteBackup(kv, latestConfig, settings, fileName);
+        const sections = normalizeBackupSectionsForRestore(backup || {});
+
+        const taskCount = Array.isArray(sections.tasks) ? sections.tasks.length : 0;
+        const trashCount = Array.isArray(sections.trash) ? sections.trash.length : 0;
+        const historyCount = sections.histories && typeof sections.histories === 'object' ? Object.keys(sections.histories).length : 0;
+        const configFieldCount = sections.config && typeof sections.config === 'object' ? Object.keys(sections.config).length : 0;
+        const keyFieldCount = sections.keys && typeof sections.keys === 'object' ? Object.keys(sections.keys).length : 0;
+
+        return new Response(JSON.stringify({
+          success: true,
+          fileName,
+          format: backup && backup.format ? backup.format : '',
+          scope: backup && backup.scope ? backup.scope : '',
+          backupType: backup && backup.backupType ? backup.backupType : '',
+          exportedAt: backup && backup.exportedAt ? backup.exportedAt : '',
+          available: {
+            tasks: taskCount > 0 || trashCount > 0 || historyCount > 0,
+            config: configFieldCount > 0,
+            keys: keyFieldCount > 0
+          },
+          taskCount,
+          trashCount,
+          historyCount,
+          configFieldCount,
+          keyFieldCount
+        }), {
+          headers: corsHeaders
+        });
+      } catch (e) {
+        return errorResponse(e.message || '检测备份内容失败', 500);
       }
     }
 
