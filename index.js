@@ -579,7 +579,7 @@ function getDashboardPage() {
 
       <label>授权回调地址</label>
       <input type="text" id="onedriveRedirectUri" readonly>
-      <div class="mode-hint" style="margin-top:-8px;margin-bottom:8px;">请把此地址添加到 Microsoft Entra 应用的 Web 重定向 URI。OneDrive 使用应用专属文件夹，仅申请 Files.ReadWrite.AppFolder 权限。</div>
+      <div class="mode-hint" style="margin-top:-8px;margin-bottom:8px;">请把此地址添加到 Microsoft Entra 应用的 Web 重定向 URI。OneDrive 使用根目录下的 TaskReminderBackup 专用文件夹，需要 Microsoft Graph 委派权限 Files.ReadWrite。</div>
       <div class="lunar-display" id="onedriveStatus" style="margin-top:0;margin-bottom:12px;">OneDrive：未连接</div>
     </div>
 
@@ -2270,7 +2270,7 @@ function getBackupSettingsFromForm() {
     scope: document.getElementById('backupScope').value || 'both',
     tenant: document.getElementById('onedriveTenant').value.trim() || 'common',
     clientId: document.getElementById('onedriveClientId').value.trim(),
-    clientSecret: document.getElementById('onedriveClientSecret').value,
+    clientSecret: document.getElementById('onedriveClientSecret').value.trim(),
     url: document.getElementById('backupUrl').value.trim(),
     folder: document.getElementById('backupFolder').value.trim() || 'TaskReminderBackup',
     username: document.getElementById('backupUsername').value.trim(),
@@ -3378,7 +3378,7 @@ export default {
         const tokenData = await exchangeOneDriveAuthorizationCode(settings, code, redirectUri);
         await verifyOneDriveToken(tokenData.access_token);
         await saveOneDriveTokens(kv, tokenData);
-        return htmlResponse(true, '授权成功，备份将保存到 OneDrive 的应用专属文件夹。');
+        return htmlResponse(true, '授权成功，备份将保存到 OneDrive 根目录的 TaskReminderBackup 文件夹。');
       } catch (e) {
         return htmlResponse(false, e.message || 'OneDrive 授权失败');
       }
@@ -4423,7 +4423,7 @@ function normalizeBackupSettings(input) {
     scope: ['config', 'tasks', 'both'].includes(input.scope) ? input.scope : 'both',
     tenant: String(input.tenant || 'common').trim() || 'common',
     clientId: String(input.clientId || '').trim(),
-    clientSecret: String(input.clientSecret || ''),
+    clientSecret: String(input.clientSecret || '').trim(),
     refreshToken: String(input.refreshToken || ''),
     accessToken: String(input.accessToken || ''),
     accessTokenExpiresAt: parseInt(input.accessTokenExpiresAt, 10) || 0,
@@ -4536,7 +4536,7 @@ function buildOneDriveAuthorizationUrl(settings, redirectUri, state) {
     response_type: 'code',
     redirect_uri: redirectUri,
     response_mode: 'query',
-    scope: 'offline_access Files.ReadWrite.AppFolder',
+    scope: 'offline_access Files.ReadWrite',
     state
   });
   return 'https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/authorize?' + params.toString();
@@ -4553,7 +4553,7 @@ async function exchangeOneDriveAuthorizationCode(settings, code, redirectUri) {
       grant_type: 'authorization_code',
       code,
       redirect_uri: redirectUri,
-      scope: 'offline_access Files.ReadWrite.AppFolder'
+      scope: 'offline_access Files.ReadWrite'
     }).toString()
   });
 
@@ -4568,13 +4568,15 @@ async function exchangeOneDriveAuthorizationCode(settings, code, redirectUri) {
 }
 
 async function verifyOneDriveToken(accessToken) {
-  const response = await fetch('https://graph.microsoft.com/v1.0/me/drive/special/approot', {
+  const driveResponse = await fetch('https://graph.microsoft.com/v1.0/me/drive?$select=id,driveType,quota', {
     headers: { 'Authorization': 'Bearer ' + accessToken }
   });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('OneDrive 应用文件夹访问失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 160) : '') + '）');
+  if (!driveResponse.ok) {
+    const text = await driveResponse.text().catch(() => '');
+    throw new Error('OneDrive 访问失败（HTTP ' + driveResponse.status + (text ? '：' + text.slice(0, 160) : '') + '）');
   }
+
+  await ensureOneDriveBackupFolder(accessToken);
   return true;
 }
 
@@ -4604,7 +4606,7 @@ async function getOneDriveAccessToken(kv, config) {
       client_secret: settings.clientSecret,
       grant_type: 'refresh_token',
       refresh_token: settings.refreshToken,
-      scope: 'offline_access Files.ReadWrite.AppFolder'
+      scope: 'offline_access Files.ReadWrite'
     }).toString()
   });
 
@@ -4617,18 +4619,67 @@ async function getOneDriveAccessToken(kv, config) {
   return data.access_token;
 }
 
-function oneDriveAppRootUrl(suffix = '') {
-  return 'https://graph.microsoft.com/v1.0/me/drive/special/approot' + suffix;
+const ONEDRIVE_BACKUP_FOLDER = 'TaskReminderBackup';
+
+function oneDriveBackupFolderPathUrl(suffix = '') {
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/' + encodeURIComponent(ONEDRIVE_BACKUP_FOLDER) + ':' + suffix;
 }
 
 function oneDriveFileUrl(fileName, content = false) {
-  const path = ':/' + encodeURIComponent(fileName) + ':';
-  return oneDriveAppRootUrl(path + (content ? '/content' : ''));
+  const safeName = encodeURIComponent(fileName);
+  return 'https://graph.microsoft.com/v1.0/me/drive/root:/' +
+    encodeURIComponent(ONEDRIVE_BACKUP_FOLDER) + '/' + safeName + ':' +
+    (content ? '/content' : '');
+}
+
+async function ensureOneDriveBackupFolder(accessToken) {
+  const headers = { 'Authorization': 'Bearer ' + accessToken };
+  const checkResponse = await fetch(oneDriveBackupFolderPathUrl(''), { headers });
+
+  if (checkResponse.ok) {
+    const item = await checkResponse.json().catch(() => ({}));
+    if (item && item.folder) return item;
+    throw new Error('OneDrive 中已存在同名项目“' + ONEDRIVE_BACKUP_FOLDER + '”，但它不是文件夹，请先重命名或删除该项目');
+  }
+
+  if (checkResponse.status !== 404) {
+    const text = await checkResponse.text().catch(() => '');
+    throw new Error('检查 OneDrive 备份文件夹失败（HTTP ' + checkResponse.status + (text ? '：' + text.slice(0, 160) : '') + '）');
+  }
+
+  const createResponse = await fetch('https://graph.microsoft.com/v1.0/me/drive/root/children', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + accessToken,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name: ONEDRIVE_BACKUP_FOLDER,
+      folder: {},
+      '@microsoft.graph.conflictBehavior': 'fail'
+    })
+  });
+
+  if (createResponse.ok) {
+    return await createResponse.json().catch(() => ({}));
+  }
+
+  if (createResponse.status === 409) {
+    const retryResponse = await fetch(oneDriveBackupFolderPathUrl(''), { headers });
+    if (retryResponse.ok) return await retryResponse.json().catch(() => ({}));
+  }
+
+  const text = await createResponse.text().catch(() => '');
+  if (createResponse.status === 403 && text.includes('serviceReadOnly')) {
+    throw new Error('OneDrive 当前处于只读状态（serviceReadOnly）。请先确认 OneDrive 网页端可以新建文件；如果网页端可以写入，稍后重试微软 Graph 服务。');
+  }
+  throw new Error('创建 OneDrive 备份文件夹失败（HTTP ' + createResponse.status + (text ? '：' + text.slice(0, 160) : '') + '）');
 }
 
 async function listOneDriveBackups(kv, config) {
   const token = await getOneDriveAccessToken(kv, config);
-  const response = await fetch(oneDriveAppRootUrl('/children?$select=name,size,lastModifiedDateTime,file&$top=200'), {
+  await ensureOneDriveBackupFolder(token);
+  const response = await fetch(oneDriveBackupFolderPathUrl('/children?$select=name,size,lastModifiedDateTime,file&$top=200'), {
     headers: { 'Authorization': 'Bearer ' + token }
   });
 
@@ -4660,6 +4711,7 @@ async function listOneDriveBackups(kv, config) {
 
 async function putOneDriveBackup(kv, config, fileName, payload) {
   const token = await getOneDriveAccessToken(kv, config);
+  await ensureOneDriveBackupFolder(token);
   const body = JSON.stringify(payload, null, 2);
   const response = await fetch(oneDriveFileUrl(fileName, true), {
     method: 'PUT',
@@ -4678,6 +4730,7 @@ async function putOneDriveBackup(kv, config, fileName, payload) {
 
 async function getOneDriveBackup(kv, config, fileName) {
   const token = await getOneDriveAccessToken(kv, config);
+  await ensureOneDriveBackupFolder(token);
   const response = await fetch(oneDriveFileUrl(fileName, true), {
     headers: { 'Authorization': 'Bearer ' + token },
     redirect: 'follow'
@@ -4692,6 +4745,7 @@ async function getOneDriveBackup(kv, config, fileName) {
 
 async function deleteOneDriveBackupFile(kv, config, fileName) {
   const token = await getOneDriveAccessToken(kv, config);
+  await ensureOneDriveBackupFolder(token);
   const response = await fetch(oneDriveFileUrl(fileName, false), {
     method: 'DELETE',
     headers: { 'Authorization': 'Bearer ' + token }
@@ -4704,6 +4758,7 @@ async function deleteOneDriveBackupFile(kv, config, fileName) {
 async function testOneDriveConnection(kv, config) {
   const token = await getOneDriveAccessToken(kv, config);
   await verifyOneDriveToken(token);
+  await ensureOneDriveBackupFolder(token);
 
   const fileName = 'task-reminder_connection-test-' + Date.now() + '.txt';
   const testBody = 'Task Reminder OneDrive connection test ' + new Date().toISOString();
@@ -4732,7 +4787,7 @@ async function testOneDriveConnection(kv, config) {
     }).catch(() => null);
   }
 
-  return { message: 'OneDrive 连接正常，应用文件夹读/写/删测试通过' };
+  return { message: 'OneDrive 连接正常，TaskReminderBackup 文件夹读/写/删测试通过' };
 }
 
 function webDavAuthHeader(settings) {
