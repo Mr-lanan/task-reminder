@@ -368,8 +368,9 @@ function getDashboardPage() {
   .reminder-group input { flex: 2; min-width: 60px; margin-bottom: 0; }
   .reminder-group select { flex: 1; min-width: 60px; margin-bottom: 0; }
   .reminder-group button { padding: 4px 10px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; }
-  .config-checkbox-group { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
-  .config-checkbox-group label { display: flex; align-items: center; gap: 4px; font-weight: normal; }
+  .config-checkbox-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; margin-bottom: 16px; }
+  .config-checkbox-group label { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-width: 0; min-height: 42px; margin: 0; padding: 8px 10px; border: 1px solid #e7e7e7; border-radius: 8px; font-weight: normal; line-height: 1.2; white-space: nowrap; }
+  .config-checkbox-group input { width: 18px; height: 18px; min-width: 18px; margin: 0; padding: 0; flex: 0 0 18px; }
   .config-detail { margin-bottom: 12px; border-left: 3px solid #4a6cf7; padding-left: 12px; }
   .toast { position: fixed; left: 50%; bottom: 30px; right: auto; background: #333; color: #fff; padding: 14px 24px; border-radius: 10px; z-index: 2000; opacity: 0; transform: translate(-50%, 20px); transition: all 0.3s; max-width: calc(100vw - 32px); width: max-content; min-width: 220px; text-align: center; line-height: 1.45; display: flex; align-items: center; justify-content: center; white-space: normal; word-break: break-word; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
