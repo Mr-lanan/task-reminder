@@ -574,12 +574,9 @@ function getDashboardPage() {
       <label>Client ID</label>
       <input type="text" id="onedriveClientId" autocomplete="off" placeholder="Microsoft Entra 应用的 Application (client) ID">
 
-      <label>Client Secret</label>
-      <input type="password" id="onedriveClientSecret" autocomplete="new-password" placeholder="Microsoft Entra 应用的客户端密码">
-
       <label>授权回调地址</label>
       <input type="text" id="onedriveRedirectUri" readonly>
-      <div class="mode-hint" style="margin-top:-8px;margin-bottom:8px;">请把此地址添加到 Microsoft Entra 应用的 Web 重定向 URI。OneDrive 使用根目录下的 TaskReminderBackup 专用文件夹，需要 Microsoft Graph 委派权限 Files.ReadWrite。</div>
+      <div class="mode-hint" style="margin-top:-8px;margin-bottom:8px;">长期模式使用 OAuth 2.0 PKCE，不需要 Client Secret。请把此地址添加到 Microsoft Entra → 身份验证 → “移动和桌面应用程序”的自定义重定向 URI；权限使用 Microsoft Graph 委派权限 Files.ReadWrite。OneDrive 备份保存到根目录下的 TaskReminderBackup 文件夹。</div>
       <div class="lunar-display" id="onedriveStatus" style="margin-top:0;margin-bottom:12px;">OneDrive：未连接</div>
     </div>
 
@@ -2281,7 +2278,6 @@ async function openBackupModal() {
 
       document.getElementById('onedriveTenant').value = settings.tenant || 'common';
       document.getElementById('onedriveClientId').value = settings.clientId || '';
-      document.getElementById('onedriveClientSecret').value = settings.clientSecret || '';
       updateOneDriveStatus(!!settings.onedriveConnected);
 
       document.getElementById('backupUrl').value = settings.url || '';
@@ -2311,7 +2307,6 @@ function getBackupSettingsFromForm() {
     autoEnabled: document.getElementById('backupAutoEnabled').checked,
     tenant: document.getElementById('onedriveTenant').value.trim() || 'common',
     clientId: document.getElementById('onedriveClientId').value.trim(),
-    clientSecret: document.getElementById('onedriveClientSecret').value.trim(),
     url: document.getElementById('backupUrl').value.trim(),
     folder: document.getElementById('backupFolder').value.trim() || 'TaskReminderBackup',
     username: document.getElementById('backupUsername').value.trim(),
@@ -2323,8 +2318,8 @@ async function saveBackupSettings(showSuccess) {
   const settings = getBackupSettingsFromForm();
 
   if (settings.provider === 'onedrive') {
-    if (!settings.clientId || !settings.clientSecret) {
-      showToast('请填写 OneDrive Client ID 和 Client Secret', 'error');
+    if (!settings.clientId) {
+      showToast('请填写 OneDrive Client ID', 'error');
       return false;
     }
   } else if (!settings.url || !settings.username || !settings.password) {
@@ -3553,9 +3548,11 @@ export default {
         const settings = getBackupSettingsFromConfig(latestConfig);
         validateOneDriveSettings(settings, false);
         const redirectUri = stateData.redirectUri || (url.origin + '/api/onedrive/callback');
-        const tokenData = await exchangeOneDriveAuthorizationCode(settings, code, redirectUri);
+        const codeVerifier = stateData.codeVerifier || '';
+        if (!codeVerifier) throw new Error('PKCE 授权状态缺少 code_verifier，请重新连接 OneDrive');
+        const tokenData = await exchangeOneDriveAuthorizationCode(settings, code, redirectUri, codeVerifier);
         await verifyOneDriveToken(tokenData.access_token);
-        await saveOneDriveTokens(kv, tokenData);
+        await saveOneDriveTokens(kv, tokenData, 'pkce');
         queueAutoBackup(ctx, kv, '连接 OneDrive');
         return htmlResponse(true, '授权成功，备份将保存到 OneDrive 根目录的 TaskReminderBackup 文件夹。');
       } catch (e) {
@@ -4094,14 +4091,17 @@ export default {
 
         const redirectUri = url.origin + '/api/onedrive/callback';
         const state = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+        const codeVerifier = createPkceVerifier();
+        const codeChallenge = await createPkceChallenge(codeVerifier);
         await kv.put('onedrive_oauth_state_' + state, JSON.stringify({
           redirectUri,
+          codeVerifier,
           createdAt: new Date().toISOString()
         }), { expirationTtl: 10 * 60 });
 
         return new Response(JSON.stringify({
           success: true,
-          authorizationUrl: buildOneDriveAuthorizationUrl(settings, redirectUri, state),
+          authorizationUrl: buildOneDriveAuthorizationUrl(settings, redirectUri, state, codeChallenge),
           redirectUri
         }), {
           headers: corsHeaders
@@ -4117,6 +4117,8 @@ export default {
       delete existing.onedriveRefreshToken;
       delete existing.onedriveAccessToken;
       delete existing.onedriveAccessTokenExpiresAt;
+      delete existing.onedriveAuthMode;
+      delete existing.onedriveClientSecret;
       await kv.put('config', JSON.stringify(existing));
 
       return new Response(JSON.stringify({ success: true }), {
@@ -4666,6 +4668,7 @@ function normalizeBackupSettings(input) {
     tenant: String(input.tenant || 'common').trim() || 'common',
     clientId: String(input.clientId || '').trim(),
     clientSecret: String(input.clientSecret || '').trim(),
+    authMode: String(input.authMode || ''),
     refreshToken: String(input.refreshToken || ''),
     accessToken: String(input.accessToken || ''),
     accessTokenExpiresAt: parseInt(input.accessTokenExpiresAt, 10) || 0,
@@ -4687,6 +4690,7 @@ function getBackupSettingsFromConfig(config) {
     tenant: config.onedriveTenant || 'common',
     clientId: config.onedriveClientId,
     clientSecret: config.onedriveClientSecret,
+    authMode: config.onedriveAuthMode || '',
     refreshToken: config.onedriveRefreshToken,
     accessToken: config.onedriveAccessToken,
     accessTokenExpiresAt: config.onedriveAccessTokenExpiresAt,
@@ -4706,7 +4710,7 @@ function publicBackupSettings(settings) {
     autoLastError: settings.autoLastError || '',
     tenant: settings.tenant,
     clientId: settings.clientId,
-    clientSecret: settings.clientSecret,
+    authMode: settings.authMode || '',
     onedriveConnected: !!settings.refreshToken,
     url: settings.url,
     folder: settings.folder,
@@ -4736,12 +4740,13 @@ async function saveBackupSettingsToConfig(kv, input) {
     const identityChanged = previous.clientId !== next.clientId || previous.tenant !== next.tenant;
     existing.onedriveTenant = next.tenant;
     existing.onedriveClientId = next.clientId;
-    existing.onedriveClientSecret = next.clientSecret;
 
     if (identityChanged) {
       delete existing.onedriveRefreshToken;
       delete existing.onedriveAccessToken;
       delete existing.onedriveAccessTokenExpiresAt;
+      delete existing.onedriveAuthMode;
+      delete existing.onedriveClientSecret;
     }
   } else {
     existing.webdavProvider = 'custom';
@@ -4757,8 +4762,8 @@ async function saveBackupSettingsToConfig(kv, input) {
 }
 
 function validateOneDriveSettings(settings, requireConnected = true) {
-  if (!settings.clientId || !settings.clientSecret) {
-    throw new Error('请先填写 OneDrive Client ID 和 Client Secret');
+  if (!settings.clientId) {
+    throw new Error('请先填写 OneDrive Client ID');
   }
   if (!/^[A-Za-z0-9._-]+$/.test(settings.tenant || 'common')) {
     throw new Error('Microsoft 租户格式无效');
@@ -4778,7 +4783,24 @@ function validateWebDavSettings(settings) {
   if (!/^https?:$/.test(parsed.protocol)) throw new Error('WebDAV 地址必须使用 http 或 https');
 }
 
-function buildOneDriveAuthorizationUrl(settings, redirectUri, state) {
+function base64UrlFromBytes(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function createPkceVerifier() {
+  const bytes = new Uint8Array(64);
+  crypto.getRandomValues(bytes);
+  return base64UrlFromBytes(bytes);
+}
+
+async function createPkceChallenge(verifier) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  return base64UrlFromBytes(new Uint8Array(digest));
+}
+
+function buildOneDriveAuthorizationUrl(settings, redirectUri, state, codeChallenge) {
   const tenant = encodeURIComponent(settings.tenant || 'common');
   const params = new URLSearchParams({
     client_id: settings.clientId,
@@ -4786,29 +4808,35 @@ function buildOneDriveAuthorizationUrl(settings, redirectUri, state) {
     redirect_uri: redirectUri,
     response_mode: 'query',
     scope: 'offline_access Files.ReadWrite',
-    state
+    state,
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256'
   });
   return 'https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/authorize?' + params.toString();
 }
 
-async function exchangeOneDriveAuthorizationCode(settings, code, redirectUri) {
+async function exchangeOneDriveAuthorizationCode(settings, code, redirectUri, codeVerifier) {
   const tenant = encodeURIComponent(settings.tenant || 'common');
   const response = await fetch('https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: settings.clientId,
-      client_secret: settings.clientSecret,
       grant_type: 'authorization_code',
       code,
       redirect_uri: redirectUri,
+      code_verifier: codeVerifier,
       scope: 'offline_access Files.ReadWrite'
     }).toString()
   });
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok || !data.access_token) {
-    throw new Error('Microsoft 授权换取令牌失败（HTTP ' + response.status + '）：' + String(data.error_description || data.error || '未知错误').slice(0, 180));
+    const detail = String(data.error_description || data.error || '未知错误');
+    const publicClientHint = /AADSTS7000218|client_secret|client_assertion/i.test(detail)
+      ? '。请在 Microsoft Entra → 身份验证中，把本系统回调地址添加到“移动和桌面应用程序”的自定义重定向 URI 后重新连接'
+      : '';
+    throw new Error('Microsoft PKCE 授权换取令牌失败（HTTP ' + response.status + '）：' + detail.slice(0, 180) + publicClientHint);
   }
   if (!data.refresh_token) {
     throw new Error('Microsoft 未返回 refresh_token，请确认授权包含 offline_access');
@@ -4829,12 +4857,14 @@ async function verifyOneDriveToken(accessToken) {
   return true;
 }
 
-async function saveOneDriveTokens(kv, tokenData) {
+async function saveOneDriveTokens(kv, tokenData, authMode) {
   const rawConfig = await kv.get('config');
   const existing = rawConfig ? JSON.parse(rawConfig) : {};
   existing.onedriveAccessToken = tokenData.access_token || existing.onedriveAccessToken || '';
   if (tokenData.refresh_token) existing.onedriveRefreshToken = tokenData.refresh_token;
   existing.onedriveAccessTokenExpiresAt = Date.now() + Math.max(60, parseInt(tokenData.expires_in, 10) || 3600) * 1000;
+  if (authMode) existing.onedriveAuthMode = authMode;
+  if (authMode === 'pkce') delete existing.onedriveClientSecret;
   await kv.put('config', JSON.stringify(existing));
 }
 
@@ -4847,16 +4877,22 @@ async function getOneDriveAccessToken(kv, config) {
   }
 
   const tenant = encodeURIComponent(settings.tenant || 'common');
+  const refreshParams = {
+    client_id: settings.clientId,
+    grant_type: 'refresh_token',
+    refresh_token: settings.refreshToken,
+    scope: 'offline_access Files.ReadWrite'
+  };
+
+  // 兼容已经存在的旧版 Client Secret 连接；重新“连接 OneDrive”后会切换到 PKCE 长期模式。
+  if (settings.authMode !== 'pkce' && settings.clientSecret) {
+    refreshParams.client_secret = settings.clientSecret;
+  }
+
   const response = await fetch('https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: settings.clientId,
-      client_secret: settings.clientSecret,
-      grant_type: 'refresh_token',
-      refresh_token: settings.refreshToken,
-      scope: 'offline_access Files.ReadWrite'
-    }).toString()
+    body: new URLSearchParams(refreshParams).toString()
   });
 
   const data = await response.json().catch(() => ({}));
@@ -5349,6 +5385,7 @@ const BACKUP_CONNECTION_FIELDS = [
   'onedriveTenant',
   'onedriveClientId',
   'onedriveClientSecret',
+  'onedriveAuthMode',
   'onedriveRefreshToken',
   'onedriveAccessToken',
   'onedriveAccessTokenExpiresAt',
