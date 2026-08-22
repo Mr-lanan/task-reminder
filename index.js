@@ -340,6 +340,14 @@ function getDashboardPage() {
   .task-card .status { display: inline-block; padding: 2px 12px; border-radius: 20px; font-size: 12px; font-weight: 500; margin-top: 8px; }
   .status-active { background: #d4edda; color: #155724; }
   .status-expired { background: #f8d7da; color: #721c24; }
+  .status-frozen { background: #dbeafe; color: #1d4ed8; }
+  .btn-freeze { background: #3498db; color: #fff; }
+  .btn-freeze:hover { background: #2980b9; }
+  .backup-type-badge { display:inline-block; padding:2px 9px; border-radius:14px; font-size:12px; font-weight:600; margin-right:6px; }
+  .backup-type-tasks { background:#e8f4fd; color:#1f6f9f; }
+  .backup-type-config { background:#e9f8ef; color:#237a49; }
+  .backup-type-both { background:#f1ebff; color:#6c4fb3; }
+  .backup-latest-badge { display:inline-block; padding:2px 8px; border-radius:14px; font-size:12px; background:#fff3cd; color:#856404; }
   .status-completed { background: #e9ecef; color: #495057; }
   .task-card .actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); justify-content: center; align-items: center; z-index: 1000; }
@@ -384,6 +392,7 @@ function getDashboardPage() {
     <div class="stat"><div class="number danger" id="statExpired">0</div><div class="label">⚠️ 已过期</div></div>
     <div class="stat"><div class="number warning" id="statSoon">0</div><div class="label">⏳ 即将到期</div></div>
     <div class="stat"><div class="number" id="statActive">0</div><div class="label">✅ 进行中</div></div>
+    <div class="stat"><div class="number" id="statFrozen">0</div><div class="label">❄️ 已冻结</div></div>
     <div class="stat"><div class="number" id="statNextCheck">--</div><div class="label">🕒 下次检查</div></div>
   </div>
 
@@ -479,8 +488,8 @@ function getDashboardPage() {
       <div class="form-row">
         <div><label>周期数值</label><input type="number" id="periodValue" value="1" min="1" onchange="updateNextDateFromStart()"></div>
         <div><label>周期单位</label>
-          <select id="periodUnit" onchange="updateNextDateFromStart()">
-            <option value="hour">小时</option><option value="day">日</option><option value="week">周</option><option value="month" selected>月</option><option value="year">年</option>
+          <select id="periodUnit" onchange="applyPeriodInputRules(); updateNextDateFromStart()">
+            <option value="minute">分钟</option><option value="hour">小时</option><option value="day">日</option><option value="week">周</option><option value="month" selected>月</option><option value="year">年</option>
           </select>
         </div>
       </div>
@@ -505,7 +514,7 @@ function getDashboardPage() {
       <div class="mode-hint">自动续订：到提醒日期后，以当前提醒日为基准计算下一周期；手动续订仍然从当前日期重新开始。</div>
     </div>
 
-    <label>提前提醒（点击 ➕ 添加多组，单位：天/小时/分钟）</label>
+    <label>提前提醒（点击 ➕ 添加多组，单位：分钟/小时/天）</label>
     <div id="reminderDaysContainer"></div>
     <button class="btn-primary btn-sm" onclick="addReminderGroup()">➕ 添加一组</button>
 
@@ -558,7 +567,7 @@ function getDashboardPage() {
 <div class="modal" id="backupModal">
   <div class="modal-content">
     <h2>💾 备份与恢复</h2>
-    <div class="mode-hint" style="margin-bottom:14px;">支持 OneDrive 与通用 WebDAV（Nextcloud、群晖等）。远端最多保留最近 20 份，超过后自动删除最早备份。</div>
+    <div class="mode-hint" style="margin-bottom:14px;">支持 OneDrive 与通用 WebDAV。智能备份会按实际变化区分“任务数据”和“配置 / Key”；两类历史各自最多保留 20 份，互不挤占，最新状态文件始终单独保留。</div>
 
     <label>备份位置</label>
     <select id="backupProvider" onchange="updateBackupProvider()">
@@ -612,8 +621,9 @@ function getDashboardPage() {
       <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px;">
         <input type="checkbox" id="backupAutoEnabled" style="width:auto;margin:0;" checked> 自动备份
       </label>
-      <div class="mode-hint" style="margin:0;">新建、修改、删除、恢复任务，手动续订，以及系统/推送设置保存后自动触发；短时间连续操作会合并为一次，自动备份固定包含任务 + 配置 + Key。</div>
-      <div class="mode-hint" id="backupAutoStatus" style="margin-top:6px;">最近自动备份：暂无</div>
+      <div class="mode-hint" style="margin:0;">智能备份按实际内容判断：任务变化只备份任务；配置 / Key 变化只备份配置 / Key；两类同时变化才分别备份两份。内容没有变化时不会生成新备份。最新状态持续覆盖，历史版本按类别独立保留。</div>
+      <div class="mode-hint" id="backupAutoLastTime" style="margin-top:6px;">上次自动备份时间：暂无</div>
+      <div class="mode-hint" id="backupAutoLastResult" style="margin-top:4px;">结果：暂无</div>
     </div>
 
     <div class="mode-hint" style="margin-bottom:12px;">恢复时无需提前选择内容。点击某个备份的“恢复”后，系统会先读取并检测该备份实际包含的数据，再弹出可恢复项目供你选择。</div>
@@ -629,6 +639,22 @@ function getDashboardPage() {
 
     <hr style="margin:18px 0;">
     <h3 style="margin-bottom:10px;">远端备份</h3>
+    <div class="form-row" style="align-items:flex-end;margin-bottom:8px;">
+      <div>
+        <label>列表筛选</label>
+        <select id="backupListFilter" onchange="renderRemoteBackupList()">
+          <option value="all">全部备份</option>
+          <option value="tasks">仅任务数据</option>
+          <option value="config">仅配置 / Key</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+        <button class="btn-outline btn-sm" type="button" onclick="selectVisibleBackups(true)">全选当前</button>
+        <button class="btn-outline btn-sm" type="button" onclick="selectVisibleBackups(false)">取消选择</button>
+        <button class="btn-danger btn-sm" type="button" onclick="deleteSelectedRemoteBackups()">删除所选</button>
+      </div>
+    </div>
+    <div class="mode-hint" style="margin-bottom:10px;">“最新状态”不计入 20 份历史，也不会被批量删除；旧版“任务 + 配置 / Key”备份仍可正常恢复。</div>
     <div id="backupList"><p style="color:#999;">尚未读取</p></div>
 
     <div class="form-actions"><button class="btn-outline" onclick="closeModal('backupModal')">关闭</button></div>
@@ -678,6 +704,25 @@ function getDashboardPage() {
     <div class="form-actions">
       <button class="btn-outline" onclick="closeModal('restoreBackupModal')">取消</button>
       <button class="btn-success" id="confirmRestoreBackupBtn" onclick="confirmRestoreRemoteBackup()">开始恢复</button>
+    </div>
+  </div>
+</div>
+
+<!-- 冻结 / 解冻处理弹窗 -->
+<div class="modal" id="unfreezeModal">
+  <div class="modal-content" style="max-width:540px;">
+    <h2>❄️ 解冻任务</h2>
+    <div class="lunar-display" id="unfreezeTaskInfo" style="margin-top:10px;margin-bottom:14px;">任务：--</div>
+    <div class="mode-hint" style="margin-bottom:12px;">该任务原提醒时间已经过去。解冻时请选择如何处理，系统不会未经确认自动补发旧提醒。</div>
+    <label>解冻后的处理方式</label>
+    <select id="unfreezePolicy">
+      <option value="expired">恢复为已过期，不补发（推荐）</option>
+      <option value="push">立即推送一次，再保持已过期状态</option>
+      <option value="next" id="unfreezeNextOption">跳到下一个未来周期</option>
+    </select>
+    <div class="form-actions">
+      <button class="btn-outline" onclick="closeModal('unfreezeModal')">取消</button>
+      <button class="btn-freeze" onclick="confirmUnfreezeTask()">确认解冻</button>
     </div>
   </div>
 </div>
@@ -929,6 +974,8 @@ let token = localStorage.getItem('token') || '';
 let reminderGroupCounter = 0;
 let checkInterval = 5;
 let notifierConfigCache = {};
+let remoteBackupItems = [];
+let pendingUnfreezeTaskId = '';
 
 function getHeaders() {
   return {
@@ -1211,6 +1258,9 @@ function addPeriodToDateTimeFrontend(d, value, unit) {
   const result = new Date(d.getTime());
 
   switch (unit) {
+    case 'minute':
+      result.setUTCMinutes(result.getUTCMinutes() + value);
+      return result;
     case 'hour':
       result.setUTCHours(result.getUTCHours() + value);
       return result;
@@ -1432,7 +1482,7 @@ function updateLunarNext() {
   let nextTime = startTime;
 
   if (startSolar) {
-    if (periodUnit === 'hour' || periodUnit === 'day' || periodUnit === 'week') {
+    if (periodUnit === 'minute' || periodUnit === 'hour' || periodUnit === 'day' || periodUnit === 'week') {
       const base = parseDateTimeLocalFrontend(formatSolarObj(startSolar), startTime);
       const next = addPeriodToDateTimeFrontend(base, periodValue, periodUnit);
       nextDate = formatDateObjLocal(next);
@@ -1453,7 +1503,24 @@ function updateLunarNext() {
 
   updateReminderPreview();
 }
+function applyPeriodInputRules() {
+  const unitEl = document.getElementById('periodUnit');
+  const valueEl = document.getElementById('periodValue');
+  if (!unitEl || !valueEl) return;
+
+  if (unitEl.value === 'minute') {
+    valueEl.min = 5;
+    valueEl.step = 5;
+    const currentValue = parseInt(valueEl.value) || 0;
+    if (currentValue < 5 || currentValue % 5 !== 0) valueEl.value = 5;
+  } else {
+    valueEl.min = 1;
+    valueEl.step = 1;
+  }
+}
+
 function updateNextDateFromStart() {
+  applyPeriodInputRules();
   const mode = document.getElementById('taskMode').value;
   const lunarCheckbox = document.getElementById('calendarLunar');
 
@@ -1516,7 +1583,7 @@ function addReminderGroup(value, unit) {
   input.onchange = updateReminderPreview;
 
   const select = document.createElement('select');
-  select.innerHTML = '<option value="day">天</option><option value="hour">小时</option><option value="minute">分钟</option>';
+  select.innerHTML = '<option value="minute">分钟</option><option value="hour">小时</option><option value="day">天</option>';
   if (unit) select.value = unit;
 
   const applyInputRules = function() {
@@ -1606,6 +1673,43 @@ function getReminderGroups() {
   return sortReminderGroups(result);
 }
 
+function getTaskPushTimesForCard(task) {
+  if (!task || !task.nextReminder) return '-';
+
+  const dueTime = task.remindTime || '08:00';
+  const groups = sortReminderGroups((task.reminderDays || []).map((value, index) => ({
+    value,
+    unit: task.reminderUnits && task.reminderUnits[index] ? task.reminderUnits[index] : 'day'
+  })));
+
+  const points = [];
+  groups.forEach(group => {
+    const advance = calcAdvanceDateTime(task.nextReminder, dueTime, group.value, group.unit);
+    points.push({ date: advance.date, time: advance.time, ms: advance.ms });
+  });
+
+  const dueMs = new Date(task.nextReminder + 'T' + dueTime + ':00+08:00').getTime();
+  points.push({ date: task.nextReminder, time: dueTime, ms: dueMs });
+
+  points.sort((a, b) => a.ms - b.ms);
+
+  const unique = [];
+  const seen = new Set();
+  points.forEach(point => {
+    const key = point.date + ' ' + point.time;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(point);
+    }
+  });
+
+  const sameDate = unique.every(point => point.date === task.nextReminder);
+  return unique.map(point => {
+    if (sameDate) return point.time;
+    return point.date.slice(5).replace('-', '/') + ' ' + point.time;
+  }).join('、');
+}
+
 // ===== 认证 & 任务加载 =====
 async function checkAuth() {
   if (!token) {
@@ -1644,8 +1748,10 @@ async function loadTasks() {
         const now = new Date();
         const nextDate = new Date(t.nextReminder + 'T' + (t.remindTime || '08:00') + ':00+08:00');
         const isCompleted = !!t.completedAt;
-        const isExpired = !isCompleted && nextDate < now;
+        const isFrozen = !!t.frozen;
+        const isExpired = !isCompleted && !isFrozen && nextDate < now;
         const unitMap = {
+          minute: '分钟',
           hour: '小时',
           day: '日',
           week: '周',
@@ -1679,9 +1785,14 @@ async function loadTasks() {
           ? ''
           : '<button class="btn-success btn-sm" onclick="renewTask(\\'' + t.id + '\\')">🔄 续订</button>';
 
-        const statusClass = isCompleted ? 'status-completed' : (isExpired ? 'status-expired' : 'status-active');
-        const statusText = isCompleted ? '✅ 已完成' : (isExpired ? '⚠️ 已过期' : '✅ 进行中');
-        const cardColor = isCompleted ? '#95a5a6' : (isExpired ? '#e74c3c' : '#2ecc71');
+        const statusClass = isCompleted ? 'status-completed' : (isFrozen ? 'status-frozen' : (isExpired ? 'status-expired' : 'status-active'));
+        const statusText = isCompleted ? '✅ 已完成' : (isFrozen ? '❄️ 已冻结' : (isExpired ? '⚠️ 已过期' : '✅ 进行中'));
+        const cardColor = isCompleted ? '#95a5a6' : (isFrozen ? '#3498db' : (isExpired ? '#e74c3c' : '#2ecc71'));
+        const freezeBtn = isCompleted
+          ? ''
+          : (isFrozen
+            ? '<button class="btn-freeze btn-sm" onclick="unfreezeTask(\\'' + t.id + '\\', ' + (nextDate < now ? 'true' : 'false') + ', ' + (isSingle ? 'true' : 'false') + ')">▶️ 解冻</button>'
+            : '<button class="btn-freeze btn-sm" onclick="freezeTask(\\'' + t.id + '\\')">❄️ 冻结</button>');
 
         return '<div class="task-card" style="border-left-color:' + cardColor + '">' +
           '<div class="title">' + escapeHtml(t.name) + ' <span style="font-size:12px;color:#999;">[' + modeLabel + ']</span></div>' +
@@ -1689,6 +1800,7 @@ async function loadTasks() {
           '<div class="info"><strong>开始/基准：</strong>' + startInfo + '</div>' +
           '<div class="info"><strong>提醒日：</strong>' + formatSolarDisplay(t.nextReminder, t.remindTime || '08:00') + '</div>' +
           '<div class="info"><strong>提前提醒：</strong>' + reminderStr + '</div>' +
+          '<div class="info"><strong>推送时间：</strong>' + getTaskPushTimesForCard(t) + '</div>' +
           '<div class="info"><strong>自动续订：</strong>' + (t.autoRenew ? '✅ 开启' : '—') + '</div>' +
           '<div class="info"><strong>备注：</strong>' + escapeHtml(t.remark || '-') + '</div>' +
           '<span class="status ' + statusClass + '">' + statusText + '</span>' +
@@ -1697,6 +1809,7 @@ async function loadTasks() {
           '<button class="btn-primary btn-sm" onclick="editTask(\\'' + t.id + '\\')">✏️ 编辑</button>' +
           '<button class="btn-history btn-sm" onclick="viewHistory(\\'' + t.id + '\\')">📜 历史</button>' +
           '<button class="btn-warning btn-sm" onclick="testTask(\\'' + t.id + '\\')">📤 测试</button>' +
+          freezeBtn +
           '<button class="btn-danger btn-sm" onclick="deleteTask(\\'' + t.id + '\\')">🗑️ 删除</button>' +
           '</div></div>';
       }).join('');
@@ -1715,9 +1828,14 @@ function updateDashboard(tasks) {
   let expired = 0;
   let soon = 0;
   let active = 0;
+  let frozen = 0;
 
   tasks.forEach(t => {
     if (t.completedAt) return;
+    if (t.frozen) {
+      frozen++;
+      return;
+    }
 
     const dt = new Date(t.nextReminder + 'T' + (t.remindTime || '08:00') + ':00+08:00');
 
@@ -1734,6 +1852,7 @@ function updateDashboard(tasks) {
   document.getElementById('statExpired').textContent = expired;
   document.getElementById('statSoon').textContent = soon;
   document.getElementById('statActive').textContent = active;
+  document.getElementById('statFrozen').textContent = frozen;
 }
 
 // ===== 新建/编辑 =====
@@ -1909,6 +2028,11 @@ async function saveTask() {
       return;
     }
 
+    if (periodUnit === 'minute' && periodValue % 5 !== 0) {
+      showToast('分钟周期必须是 5 的倍数', 'error');
+      return;
+    }
+
     body.periodValue = periodValue;
     body.periodUnit = periodUnit;
     body.startTime = startTime;
@@ -2018,6 +2142,71 @@ async function deleteTask(id) {
     loadTasks();
   } else {
     showToast(data.message || '删除失败', 'error');
+  }
+}
+
+async function freezeTask(id) {
+  if (!confirm('确认冻结这个任务？冻结后会暂停提前提醒、到期提醒、失败重试和自动续订；任务设置本身不会改变。')) return;
+
+  try {
+    const resp = await fetch('/api/tasks/' + id + '/freeze', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ freeze: true })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      showToast('任务已冻结，自动提醒已暂停');
+      loadTasks();
+    } else {
+      showToast(data.message || '冻结失败', 'error');
+    }
+  } catch (e) {
+    showToast('冻结失败', 'error');
+  }
+}
+
+async function unfreezeTask(id, isPast, isSingle) {
+  if (!isPast) {
+    return submitUnfreezeTask(id, 'normal');
+  }
+
+  pendingUnfreezeTaskId = id;
+  document.getElementById('unfreezeTaskInfo').textContent = '该任务的原提醒时间已经过去';
+  const nextOption = document.getElementById('unfreezeNextOption');
+  if (nextOption) nextOption.style.display = isSingle ? 'none' : 'block';
+  document.getElementById('unfreezePolicy').value = 'expired';
+  openModal('unfreezeModal');
+}
+
+async function confirmUnfreezeTask() {
+  if (!pendingUnfreezeTaskId) return;
+  const policy = document.getElementById('unfreezePolicy').value || 'expired';
+  closeModal('unfreezeModal');
+  await submitUnfreezeTask(pendingUnfreezeTaskId, policy);
+  pendingUnfreezeTaskId = '';
+}
+
+async function submitUnfreezeTask(id, policy) {
+  try {
+    const resp = await fetch('/api/tasks/' + id + '/freeze', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ freeze: false, policy: policy || 'normal' })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      let msg = '任务已解冻';
+      if (data.movedToNext) msg += '，已跳到下一个未来周期：' + (data.nextReminder || '') + ' ' + (data.remindTime || '');
+      else if (data.pushAttempted) msg += data.pushSuccess ? '，已立即推送一次' : '，立即推送失败，任务保持已过期';
+      else if (data.suppressCatchUp) msg += '，旧提醒不会补发';
+      showToast(msg);
+      loadTasks();
+    } else {
+      showToast(data.message || '解冻失败', 'error');
+    }
+  } catch (e) {
+    showToast('解冻失败', 'error');
   }
 }
 
@@ -2437,12 +2626,23 @@ async function openBackupModal() {
       document.getElementById('backupProvider').value = settings.provider || 'onedrive';
       document.getElementById('backupScope').value = settings.scope || 'both';
       document.getElementById('backupAutoEnabled').checked = settings.autoEnabled !== false;
-      const autoStatus = document.getElementById('backupAutoStatus');
-      if (autoStatus) {
-        if (settings.autoLastAt) {
-          autoStatus.textContent = '最近自动备份：' + formatFullDate(settings.autoLastAt) + (settings.autoLastError ? '（失败：' + settings.autoLastError + '）' : '（成功）');
+      const autoLastTime = document.getElementById('backupAutoLastTime');
+      const autoLastResult = document.getElementById('backupAutoLastResult');
+      if (autoLastTime) {
+        autoLastTime.textContent = settings.autoLastAt
+          ? '上次自动备份时间：' + formatFullDate(settings.autoLastAt)
+          : '上次自动备份时间：暂无';
+      }
+      if (autoLastResult) {
+        if (!settings.autoLastAt) {
+          autoLastResult.textContent = '结果：暂无';
+          autoLastResult.style.color = '#888';
+        } else if (settings.autoLastError) {
+          autoLastResult.textContent = '结果：失败 - ' + settings.autoLastError;
+          autoLastResult.style.color = '#e74c3c';
         } else {
-          autoStatus.textContent = '最近自动备份：暂无';
+          autoLastResult.textContent = '结果：成功' + (settings.autoLastSummary ? ' - ' + settings.autoLastSummary : '');
+          autoLastResult.style.color = '#2e7d32';
         }
       }
 
@@ -2630,7 +2830,8 @@ async function createRemoteBackup() {
     const data = await resp.json();
 
     if (data.success) {
-      showToast('备份成功：' + (data.fileName || ''));
+      const files = Array.isArray(data.fileNames) ? data.fileNames : (data.fileName ? [data.fileName] : []);
+      showToast('备份成功' + (files.length ? '：' + files.length + ' 个文件' : ''));
       await loadRemoteBackups();
     } else {
       showToast(data.message || '备份失败', 'error');
@@ -2638,6 +2839,55 @@ async function createRemoteBackup() {
   } catch (e) {
     showToast('备份失败', 'error');
   }
+}
+
+function backupKindMatchesFilter(item, filter) {
+  if (filter === 'all') return true;
+  if (filter === 'tasks') return item.kind === 'tasks' || item.kind === 'both';
+  if (filter === 'config') return item.kind === 'config' || item.kind === 'both';
+  return true;
+}
+
+function backupTypeBadge(item) {
+  const kind = item.kind || 'both';
+  if (kind === 'tasks') return '<span class="backup-type-badge backup-type-tasks">🟦 任务数据</span>';
+  if (kind === 'config') return '<span class="backup-type-badge backup-type-config">🟩 配置 / Key</span>';
+  return '<span class="backup-type-badge backup-type-both">🟪 任务 + 配置 / Key</span>';
+}
+
+function renderRemoteBackupList() {
+  const list = document.getElementById('backupList');
+  if (!list) return;
+  const filterEl = document.getElementById('backupListFilter');
+  const filter = filterEl ? filterEl.value : 'all';
+  const items = remoteBackupItems.filter(item => backupKindMatchesFilter(item, filter));
+
+  if (items.length === 0) {
+    list.innerHTML = '<p style="color:#999;">当前筛选下暂无备份</p>';
+    return;
+  }
+
+  list.innerHTML = items.map(item => {
+    const size = item.size ? Math.max(1, Math.round(item.size / 1024)) + ' KB' : '-';
+    const latestBadge = item.isLatest ? '<span class="backup-latest-badge">⭐ 最新状态</span>' : '';
+    const check = item.isLatest
+      ? ''
+      : '<input type="checkbox" class="backup-select-checkbox" data-file="' + escapeHtml(item.fileName || '') + '" style="width:auto;margin:0 8px 0 0;vertical-align:middle;">';
+    const deleteBtn = item.isLatest
+      ? ''
+      : '<button class="btn-danger btn-sm" onclick="deleteRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">删除</button>';
+    const reason = item.backupTypeLabel ? '<div style="font-size:12px;color:#777;margin-top:4px;">' + escapeHtml(item.backupTypeLabel) + '</div>' : '';
+    return '<div class="history-item" style="padding:12px 0;">' +
+      '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">' + check + backupTypeBadge(item) + latestBadge + '</div>' +
+      '<div style="margin-top:6px;"><strong>' + escapeHtml(item.displayName || item.fileName || '-') + '</strong></div>' +
+      '<div>🕒 ' + escapeHtml(item.modified || '-') + '　📦 ' + size + '</div>' +
+      reason +
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<button class="btn-success btn-sm" onclick="prepareRestoreRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">恢复</button>' +
+        deleteBtn +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
 async function loadRemoteBackups() {
@@ -2654,25 +2904,45 @@ async function loadRemoteBackups() {
       return;
     }
 
-    const items = data.items || [];
-    if (items.length === 0) {
+    remoteBackupItems = data.items || [];
+    if (remoteBackupItems.length === 0) {
       list.innerHTML = '<p style="color:#999;">暂无远端备份</p>';
       return;
     }
 
-    list.innerHTML = items.map(item => {
-      const size = item.size ? Math.max(1, Math.round(item.size / 1024)) + ' KB' : '-';
-      return '<div class="history-item" style="padding:12px 0;">' +
-        '<div><strong>' + escapeHtml(item.fileName || '-') + '</strong></div>' +
-        '<div>🕒 ' + escapeHtml(item.modified || '-') + '　📦 ' + size + '</div>' +
-        '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
-          '<button class="btn-success btn-sm" onclick="prepareRestoreRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">恢复</button>' +
-          '<button class="btn-danger btn-sm" onclick="deleteRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">删除</button>' +
-        '</div>' +
-      '</div>';
-    }).join('');
+    renderRemoteBackupList();
   } catch (e) {
     list.innerHTML = '<p style="color:#e74c3c;">读取备份失败</p>';
+  }
+}
+
+function selectVisibleBackups(checked) {
+  document.querySelectorAll('#backupList .backup-select-checkbox').forEach(el => { el.checked = !!checked; });
+}
+
+async function deleteSelectedRemoteBackups() {
+  const selected = Array.from(document.querySelectorAll('#backupList .backup-select-checkbox:checked')).map(el => el.dataset.file).filter(Boolean);
+  if (selected.length === 0) {
+    showToast('请先选择要删除的历史备份', 'error');
+    return;
+  }
+  if (!confirm('确定删除选中的 ' + selected.length + ' 份历史备份？最新状态备份不会被删除。')) return;
+
+  try {
+    const resp = await fetch('/api/backups/delete-batch', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ fileNames: selected })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      showToast('已删除 ' + (data.deleted || 0) + ' 份备份');
+      await loadRemoteBackups();
+    } else {
+      showToast(data.message || '批量删除失败', 'error');
+    }
+  } catch (e) {
+    showToast('批量删除失败', 'error');
   }
 }
 
@@ -2736,7 +3006,10 @@ function renderDetectedRestoreOptions(info) {
     document.getElementById('confirmRestoreBackupBtn').disabled = true;
   } else {
     container.innerHTML = rows.join('');
-    summary.textContent = '检测完成：该备份包含 ' + summaryParts.join('、') + '。请选择本次需要恢复的内容。';
+    const countText = available.tasks
+      ? ' 当前任务 ' + (parseInt(info.currentTaskCount) || 0) + ' 个，备份任务 ' + (parseInt(info.taskCount) || 0) + ' 个。'
+      : '';
+    summary.textContent = '检测完成：该备份包含 ' + summaryParts.join('、') + '。' + countText + '请选择本次需要恢复的内容。';
     document.getElementById('confirmRestoreBackupBtn').disabled = false;
   }
 
@@ -2810,7 +3083,11 @@ async function confirmRestoreRemoteBackup() {
       : '已过期任务会恢复为已过期状态，不补发。')
     : '本次不恢复任务数据。';
 
-  if (!confirm('确认恢复备份“' + fileName + '”？\\n恢复内容：' + selected.join('、') + '\\n当前采用合并恢复：同 ID 数据会覆盖，未选择的类别和其他现有任务不会删除。\\n' + policyText)) return;
+  const taskCountText = restoreSections.tasks
+    ? '\\n当前正常任务：' + (parseInt(pendingRestoreBackupInfo.currentTaskCount) || 0) + ' 个；备份正常任务：' + (parseInt(pendingRestoreBackupInfo.taskCount) || 0) + ' 个。'
+    : '';
+
+  if (!confirm('确认恢复备份“' + fileName + '”？\\n恢复内容：' + selected.join('、') + taskCountText + '\\n当前采用合并恢复：同 ID 数据会覆盖，未选择的类别和其他现有任务不会删除。\\n' + policyText)) return;
 
   const button = document.getElementById('confirmRestoreBackupBtn');
   button.disabled = true;
@@ -2911,48 +3188,99 @@ function syncNotifierConfigCacheFromDOM() {
   });
 }
 
+function getNotifierMeta(type) {
+  const all = {
+    serverchan: { name: 'Server酱', fields: [{ key: 'serverchanKey', label: 'SendKey' }] },
+    pushplus: { name: 'PushPlus', fields: [{ key: 'pushplusToken', label: 'Token' }] },
+    telegram: { name: 'Telegram', fields: [{ key: 'tgBotToken', label: 'Bot Token' }, { key: 'tgChatId', label: 'Chat ID' }] },
+    email: { name: '邮件（Resend）', fields: [{ key: 'emailFrom', label: '发件邮箱' }, { key: 'emailTo', label: '收件邮箱（多个用英文逗号分隔）' }, { key: 'emailApiKey', label: 'API Key (Resend)' }] },
+    brevo: { name: '邮件（Brevo）', fields: [{ key: 'brevoFrom', label: '发件邮箱' }, { key: 'brevoFromName', label: '发件人名称（可选）', optional: true }, { key: 'brevoTo', label: '收件邮箱（多个用英文逗号分隔）' }, { key: 'brevoApiKey', label: 'API Key (Brevo)' }] },
+    notifyx: { name: 'NotifyX', fields: [{ key: 'notifyxApiKey', label: 'API Key' }] }
+  };
+  return all[type] || { name: type, fields: [] };
+}
+
 function renderNotifierFields(selectedTypes) {
   const container = document.getElementById('notifierConfigFields');
-
-  const allFields = {
-    serverchan: [{ key: 'serverchanKey', label: 'SendKey' }],
-    pushplus: [{ key: 'pushplusToken', label: 'Token' }],
-    telegram: [
-      { key: 'tgBotToken', label: 'Bot Token' },
-      { key: 'tgChatId', label: 'Chat ID' }
-    ],
-    email: [
-      { key: 'emailFrom', label: '发件邮箱' },
-      { key: 'emailTo', label: '收件邮箱（多个用英文逗号分隔）' },
-      { key: 'emailApiKey', label: 'API Key (Resend)' }
-    ],
-    brevo: [
-      { key: 'brevoFrom', label: '发件邮箱' },
-      { key: 'brevoFromName', label: '发件人名称（可选）' },
-      { key: 'brevoTo', label: '收件邮箱（多个用英文逗号分隔）' },
-      { key: 'brevoApiKey', label: 'API Key (Brevo)' }
-    ],
-    notifyx: [{ key: 'notifyxApiKey', label: 'API Key' }]
-  };
-
   let html = '';
 
   selectedTypes.forEach(type => {
-    const fields = allFields[type] || [];
+    const meta = getNotifierMeta(type);
+    const fields = meta.fields || [];
 
     if (fields.length) {
-      html += '<div class="config-detail"><strong>' + type + '</strong>';
+      const configured = fields.every(field => field.optional || String(notifierConfigCache[field.key] || '').trim());
+      html += '<div class="config-detail">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">' +
+          '<strong>' + meta.name + '</strong>' +
+          '<span style="font-size:12px;color:' + (configured ? '#2e7d32' : '#888') + ';">' + (configured ? '✅ 已配置' : '⚪ 未配置完整') + '</span>' +
+        '</div>';
 
       fields.forEach(f => {
         const val = notifierConfigCache[f.key] || '';
         html += '<label>' + f.label + '</label><input type="text" id="cfg_' + f.key + '" value="' + val + '">';
       });
 
-      html += '</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px 0;">' +
+        '<button type="button" class="btn-success btn-sm" onclick="testNotifierChannel(\\'' + type + '\\')">🧪 测试此渠道</button>' +
+        '<button type="button" class="btn-danger btn-sm" onclick="clearNotifierChannelConfig(\\'' + type + '\\')">🗑️ 清除配置</button>' +
+      '</div></div>';
     }
   });
 
   container.innerHTML = html;
+}
+
+async function testNotifierChannel(type) {
+  syncNotifierConfigCacheFromDOM();
+  const meta = getNotifierMeta(type);
+  const settings = {};
+  (meta.fields || []).forEach(field => {
+    settings[field.key] = String(notifierConfigCache[field.key] || '').trim();
+  });
+
+  showToast('正在测试 ' + meta.name + '...');
+
+  try {
+    const resp = await fetch('/api/config/test-notifier', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ type, settings })
+    });
+    const data = await resp.json();
+    if (data.success) showToast('✅ ' + meta.name + ' 测试成功');
+    else showToast('❌ ' + meta.name + ' 测试失败：' + (data.message || '未知错误'), 'error');
+  } catch (e) {
+    showToast('❌ ' + meta.name + ' 测试请求失败', 'error');
+  }
+}
+
+async function clearNotifierChannelConfig(type) {
+  syncNotifierConfigCacheFromDOM();
+  const meta = getNotifierMeta(type);
+  if (!confirm('确定清除“' + meta.name + '”的已保存配置吗？\\n清除后会同时停用该推送渠道，需要重新填写 Key / Token 后才能再次使用。')) return;
+
+  try {
+    const resp = await fetch('/api/config/clear-notifier', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ type })
+    });
+    const data = await resp.json();
+    if (!data.success) {
+      showToast(data.message || '清除配置失败', 'error');
+      return;
+    }
+
+    (meta.fields || []).forEach(field => { notifierConfigCache[field.key] = ''; });
+    const checkbox = document.querySelector('#notifierCheckboxes input[value="' + type + '"]');
+    if (checkbox) checkbox.checked = false;
+    const selected = Array.from(document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked')).map(cb => cb.value);
+    renderNotifierFields(selected);
+    showToast(meta.name + ' 配置已清除并停用');
+  } catch (e) {
+    showToast('清除配置失败', 'error');
+  }
 }
 
 document.addEventListener('input', function(e) {
@@ -3169,6 +3497,9 @@ function addPeriodToDateTimeForWorker(d, value, unit) {
   const result = new Date(d.getTime());
 
   switch (unit) {
+    case 'minute':
+      result.setUTCMinutes(result.getUTCMinutes() + value);
+      return result;
     case 'hour':
       result.setUTCHours(result.getUTCHours() + value);
       return result;
@@ -3360,7 +3691,7 @@ function calcNextFromReminderDate(task) {
   const currentTime = task.remindTime || '08:00';
 
   if (isLunarPeriodic) {
-    if (unit === 'hour' || unit === 'day' || unit === 'week') {
+    if (unit === 'minute' || unit === 'hour' || unit === 'day' || unit === 'week') {
       const d = parseDateTimeLocal(task.nextReminder, currentTime);
       const next = addPeriodToDateTimeForWorker(d, val, unit);
 
@@ -3942,6 +4273,140 @@ export default {
       });
     }
 
+    // ---------- 冻结 / 解冻任务 ----------
+    if (path.startsWith('/api/tasks/') && path.endsWith('/freeze') && method === 'POST') {
+      const id = path.split('/')[3];
+      const raw = await kv.get('task_' + id);
+      if (!raw) return errorResponse('任务不存在', 404);
+
+      let body = {};
+      try { body = await request.json(); } catch (e) {}
+      const task = JSON.parse(raw);
+
+      if (task.completedAt) return errorResponse('已完成任务无需冻结', 400);
+
+      const freeze = body.freeze !== false;
+      const nowIso = new Date().toISOString();
+
+      if (freeze) {
+        task.frozen = true;
+        task.frozenAt = nowIso;
+        await kv.put('task_' + id, JSON.stringify(task));
+        queueAutoBackup(ctx, kv, '冻结任务');
+        return new Response(JSON.stringify({ success: true, frozen: true, task }), { headers: corsHeaders });
+      }
+
+      const remindMs = task.nextReminder
+        ? new Date(task.nextReminder + 'T' + (task.remindTime || '08:00') + ':00+08:00').getTime()
+        : 0;
+      const isPast = !!remindMs && remindMs <= Date.now();
+      const policy = String(body.policy || 'normal');
+      let suppressCatchUp = false;
+      let pushAttempted = false;
+      let pushSuccess = false;
+      let movedToNext = false;
+
+      delete task.frozen;
+      delete task.frozenAt;
+      task.unfrozenAt = nowIso;
+
+      if (!isPast) {
+        delete task.suppressCatchUp;
+        delete task.restoredAt;
+      } else if (policy === 'next') {
+        if (task.mode === 'countdown') return errorResponse('单次提醒不能跳到下一周期，请选择恢复为已过期或立即推送', 400);
+
+        let guard = 0;
+        let currentMs = remindMs;
+        while (currentMs <= Date.now() && guard < 500) {
+          const oldNext = task.nextReminder;
+          const oldTime = task.remindTime || '08:00';
+          const next = calcNextFromReminderDate(task);
+          if (!next || !next.nextReminder) return errorResponse('无法计算下一个未来周期', 400);
+          const nextTime = next.remindTime || oldTime;
+          if (next.nextReminder === oldNext && nextTime === oldTime) return errorResponse('下一周期未发生变化，无法解冻', 400);
+
+          task.startDate = oldNext;
+          task.startTime = oldTime;
+          task.nextReminder = next.nextReminder;
+          task.remindTime = nextTime;
+          currentMs = new Date(task.nextReminder + 'T' + task.remindTime + ':00+08:00').getTime();
+          guard++;
+        }
+        if (currentMs <= Date.now()) return errorResponse('无法在合理范围内找到未来周期', 400);
+
+        if (task.calendarType === 'lunar' || task.mode === 'lunar') {
+          const parts = task.nextReminder.split('-').map(Number);
+          const lunar = LunarCalendar.solarToLunar(parts[0], parts[1], parts[2]);
+          if (lunar) {
+            task.lunarYear = lunar.lunarYear;
+            task.lunarMonth = lunar.lunarMonth;
+            task.lunarDay = lunar.lunarDay;
+            task.lunarLeap = lunar.isLeapMonth;
+          }
+        }
+
+        delete task.suppressCatchUp;
+        delete task.restoredAt;
+        movedToNext = true;
+
+        const historyRaw = await kv.get('history_' + id);
+        let history = historyRaw ? JSON.parse(historyRaw) : [];
+        history.push({
+          renewedAt: nowIso,
+          nextReminder: task.nextReminder,
+          remindTime: task.remindTime || '08:00',
+          reason: '解冻后跳到下一个未来周期'
+        });
+        if (history.length > 21) history = history.slice(-21);
+        await kv.put('history_' + id, JSON.stringify(history));
+      } else {
+        suppressCatchUp = true;
+        task.suppressCatchUp = true;
+        task.restoredAt = nowIso;
+      }
+
+      await kv.put('task_' + id, JSON.stringify(task));
+
+      if (isPast && policy === 'push') {
+        pushAttempted = true;
+        const title = '❄️ 解冻提醒：' + task.name;
+        const content =
+          '📋 "' + task.name + '" 已解冻，并按你的选择立即推送一次。\n' +
+          '📅 原提醒日：' + task.nextReminder + ' ' + (task.remindTime || '08:00') + '\n' +
+          '📝 备注：' + (task.remark || '无');
+        const result = await sendNotification(config, title, content, task);
+        pushSuccess = !!result.success;
+
+        await addPushLog(kv, {
+          type: '解冻立即推送',
+          taskId: task.id,
+          taskName: task.name,
+          nextReminder: task.nextReminder,
+          remindTime: task.remindTime || '08:00',
+          success: pushSuccess,
+          error: result.error || ''
+        });
+
+        if (pushSuccess && task.mode === 'countdown') {
+          await markSingleTaskCompleted(kv, task, '解冻后立即推送成功，单次提醒已标记完成。');
+        }
+      }
+
+      queueAutoBackup(ctx, kv, '解冻任务');
+      return new Response(JSON.stringify({
+        success: true,
+        frozen: false,
+        task,
+        suppressCatchUp,
+        pushAttempted,
+        pushSuccess,
+        movedToNext,
+        nextReminder: task.nextReminder,
+        remindTime: task.remindTime || '08:00'
+      }), { headers: corsHeaders });
+    }
+
     // ---------- 删除任务：移入回收站 ----------
     if (path.startsWith('/api/tasks/') && method === 'DELETE') {
       const id = path.split('/')[3];
@@ -4095,7 +4560,7 @@ export default {
       let newTime = task.remindTime || '08:00';
       const isLunarPeriodic = task.calendarType === 'lunar' || task.mode === 'lunar';
 
-      if (isLunarPeriodic && task.periodUnit !== 'hour' && task.periodUnit !== 'day' && task.periodUnit !== 'week') {
+      if (isLunarPeriodic && task.periodUnit !== 'minute' && task.periodUnit !== 'hour' && task.periodUnit !== 'day' && task.periodUnit !== 'week') {
         const from = parseDateLocal(today);
 
         const next = LunarCalendar.nextLunarDate(
@@ -4404,7 +4869,8 @@ export default {
         const latestRaw = await kv.get('config');
         const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
         const settings = getBackupSettingsFromConfig(latestConfig);
-        const items = await listRemoteBackups(kv, latestConfig, settings);
+        const rawItems = await listRemoteBackups(kv, latestConfig, settings);
+        const items = rawItems.map(item => ({ ...item, ...describeBackupFileName(item.fileName) }));
 
         return new Response(JSON.stringify({
           success: true,
@@ -4425,21 +4891,70 @@ export default {
         const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
         const settings = getBackupSettingsFromConfig(latestConfig);
         const scope = ['config', 'tasks', 'both'].includes(body.scope) ? body.scope : (settings.scope || 'both');
-        const payload = await buildBackupPayload(kv, scope);
-        const fileName = buildBackupFileName(scope);
+        const stamp = buildBackupTimestamp();
+        const fileNames = [];
+        let deletedOld = 0;
 
-        await putRemoteBackup(kv, latestConfig, settings, fileName, payload);
-        const deletedOld = await trimRemoteBackups(kv, latestConfig, settings, 20);
+        if (scope === 'tasks' || scope === 'both') {
+          const result = await writeBackupKind(kv, latestConfig, settings, 'tasks', {
+            backupType: 'manual',
+            reason: '手动备份',
+            createHistory: true,
+            stamp
+          });
+          if (result.historyName) fileNames.push(result.historyName);
+          deletedOld += result.deletedOld || 0;
+        }
+
+        if (scope === 'config' || scope === 'both') {
+          const result = await writeBackupKind(kv, latestConfig, settings, 'config', {
+            backupType: 'manual',
+            reason: '手动备份',
+            createHistory: true,
+            stamp
+          });
+          if (result.historyName) fileNames.push(result.historyName);
+          deletedOld += result.deletedOld || 0;
+        }
 
         return new Response(JSON.stringify({
           success: true,
-          fileName,
+          fileNames,
+          fileName: fileNames[0] || '',
           deletedOld
         }), {
           headers: corsHeaders
         });
       } catch (e) {
         return errorResponse(e.message || '远端备份失败', 500);
+      }
+    }
+
+    // ---------- 批量删除历史备份 ----------
+    if (path === '/api/backups/delete-batch' && method === 'POST') {
+      try {
+        const body = await request.json();
+        const names = Array.isArray(body.fileNames) ? body.fileNames.map(v => String(v || '').trim()).filter(Boolean) : [];
+        if (names.length === 0) return errorResponse('没有选择要删除的备份', 400);
+
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
+        let deleted = 0;
+
+        for (const fileName of [...new Set(names)].slice(0, 100)) {
+          if (!isSafeBackupFileName(fileName)) continue;
+          const meta = describeBackupFileName(fileName);
+          if (meta.isLatest) continue;
+          try {
+            await deleteRemoteBackupFile(kv, latestConfig, settings, fileName);
+            deleted++;
+          } catch (e) {}
+        }
+
+        return new Response(JSON.stringify({ success: true, deleted }), { headers: corsHeaders });
+      } catch (e) {
+        return errorResponse(e.message || '批量删除备份失败', 500);
       }
     }
 
@@ -4459,6 +4974,8 @@ export default {
         const taskCount = Array.isArray(sections.tasks) ? sections.tasks.length : 0;
         const trashCount = Array.isArray(sections.trash) ? sections.trash.length : 0;
         const historyCount = sections.histories && typeof sections.histories === 'object' ? Object.keys(sections.histories).length : 0;
+        const currentTasks = await getAllTasks(kv);
+        const currentTaskCount = currentTasks.length;
         const configFieldCount = sections.config && typeof sections.config === 'object' ? Object.keys(sections.config).length : 0;
         const keyFieldCount = sections.keys && typeof sections.keys === 'object' ? Object.keys(sections.keys).length : 0;
 
@@ -4475,6 +4992,7 @@ export default {
             keys: keyFieldCount > 0
           },
           taskCount,
+          currentTaskCount,
           trashCount,
           historyCount,
           configFieldCount,
@@ -4524,6 +5042,7 @@ export default {
       try {
         const fileName = decodeURIComponent(path.slice('/api/backups/'.length));
         if (!isSafeBackupFileName(fileName)) return errorResponse('备份文件名无效', 400);
+        if (describeBackupFileName(fileName).isLatest) return errorResponse('最新状态备份受保护，不能单独删除', 400);
 
         const latestRaw = await kv.get('config');
         const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
@@ -4536,6 +5055,62 @@ export default {
       } catch (e) {
         return errorResponse(e.message || '删除远端备份失败', 500);
       }
+    }
+
+    // ---------- 单渠道测试 ----------
+    if (path === '/api/config/test-notifier' && method === 'POST') {
+      const body = await request.json();
+      const type = String(body.type || '').trim();
+      const fieldMap = {
+        serverchan: ['serverchanKey'], pushplus: ['pushplusToken'], telegram: ['tgBotToken', 'tgChatId'],
+        email: ['emailFrom', 'emailTo', 'emailApiKey'], brevo: ['brevoFrom', 'brevoFromName', 'brevoTo', 'brevoApiKey'], notifyx: ['notifyxApiKey']
+      };
+      const nameMap = { serverchan: 'Server酱', pushplus: 'PushPlus', telegram: 'Telegram', email: 'Resend', brevo: 'Brevo', notifyx: 'NotifyX' };
+      if (!fieldMap[type]) return errorResponse('未知推送渠道', 400);
+
+      const testConfig = { ...config };
+      const settings = body.settings && typeof body.settings === 'object' ? body.settings : {};
+      fieldMap[type].forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(settings, key)) testConfig[key] = String(settings[key] || '').trim();
+      });
+
+      const result = await sendNotification(
+        testConfig,
+        '🧪 推送渠道测试：' + nameMap[type],
+        '这是一条来自任务提醒系统的单渠道测试消息。\n测试时间：' + new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        null,
+        [type]
+      );
+      const channelResult = result.results && result.results.length ? result.results[0] : null;
+
+      return new Response(JSON.stringify({
+        success: !!(channelResult && channelResult.success),
+        message: channelResult && channelResult.error ? channelResult.error : '',
+        result: channelResult || null
+      }), {
+        status: channelResult && channelResult.success ? 200 : 400,
+        headers: corsHeaders
+      });
+    }
+
+    // ---------- 清除单渠道配置 ----------
+    if (path === '/api/config/clear-notifier' && method === 'POST') {
+      const body = await request.json();
+      const type = String(body.type || '').trim();
+      const fieldMap = {
+        serverchan: ['serverchanKey'], pushplus: ['pushplusToken'], telegram: ['tgBotToken', 'tgChatId'],
+        email: ['emailFrom', 'emailTo', 'emailApiKey'], brevo: ['brevoFrom', 'brevoFromName', 'brevoTo', 'brevoApiKey'], notifyx: ['notifyxApiKey']
+      };
+      if (!fieldMap[type]) return errorResponse('未知推送渠道', 400);
+
+      const raw = await kv.get('config');
+      const existing = raw ? JSON.parse(raw) : {};
+      fieldMap[type].forEach(key => delete existing[key]);
+      if (Array.isArray(existing.notifierTypes)) existing.notifierTypes = existing.notifierTypes.filter(item => item !== type);
+      await kv.put('config', JSON.stringify(existing));
+      queueAutoBackup(ctx, kv, '清除推送渠道配置');
+
+      return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
     }
 
     // ---------- 配置读取 ----------
@@ -4613,7 +5188,7 @@ export default {
     const retryWindowMinutes = getRetryWindowMinutes(config);
 
     for (const task of tasks) {
-      if (!task.nextReminder || task.completedAt) continue;
+      if (!task.nextReminder || task.completedAt || task.frozen) continue;
 
       // 从回收站恢复且原提醒时间已经过去的任务，不补发历史提醒。
       // 用户编辑或手动续订后会自动清除此标记。
@@ -4918,6 +5493,7 @@ function normalizeBackupSettings(input) {
     autoEnabled: input.autoEnabled !== false,
     autoLastAt: String(input.autoLastAt || ''),
     autoLastError: String(input.autoLastError || ''),
+    autoLastSummary: String(input.autoLastSummary || ''),
     tenant: String(input.tenant || 'common').trim() || 'common',
     clientId: String(input.clientId || '').trim(),
     clientSecret: String(input.clientSecret || '').trim(),
@@ -4942,6 +5518,7 @@ function getBackupSettingsFromConfig(config) {
     autoEnabled: config.backupAutoEnabled !== false,
     autoLastAt: config.backupAutoLastAt || '',
     autoLastError: config.backupAutoLastError || '',
+    autoLastSummary: config.backupAutoLastSummary || '',
     tenant: config.onedriveTenant || 'common',
     clientId: config.onedriveClientId,
     clientSecret: config.onedriveClientSecret,
@@ -4965,6 +5542,7 @@ function publicBackupSettings(settings) {
     autoEnabled: settings.autoEnabled !== false,
     autoLastAt: settings.autoLastAt || '',
     autoLastError: settings.autoLastError || '',
+    autoLastSummary: settings.autoLastSummary || '',
     tenant: settings.tenant,
     clientId: settings.clientId,
     authMode: settings.authMode || '',
@@ -5514,7 +6092,9 @@ function decodeXmlEntities(text) {
 }
 
 function isSafeBackupFileName(fileName) {
-  return /^task-reminder_backup_(config|tasks|both)_\d{8}_\d{6}\.json$/.test(String(fileName || ''));
+  const name = String(fileName || '');
+  return /^task-reminder_backup_(config|tasks|both)_\d{8}_\d{6}\.json$/.test(name) ||
+    /^task-reminder_latest_(config|tasks)\.json$/.test(name);
 }
 
 async function listWebDavBackups(settings) {
@@ -5699,12 +6279,61 @@ async function testRemoteBackupConnection(kv, config, settings) {
   return testWebDavConnectionForWorker(settings);
 }
 
-async function trimRemoteBackups(kv, config, settings, maxCount) {
+function buildBackupTimestamp() {
+  const bj = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  return String(bj.getUTCFullYear()) +
+    String(bj.getUTCMonth() + 1).padStart(2, '0') +
+    String(bj.getUTCDate()).padStart(2, '0') + '_' +
+    String(bj.getUTCHours()).padStart(2, '0') +
+    String(bj.getUTCMinutes()).padStart(2, '0') +
+    String(bj.getUTCSeconds()).padStart(2, '0');
+}
+
+function buildBackupFileName(scope, stamp) {
+  return 'task-reminder_backup_' + scope + '_' + (stamp || buildBackupTimestamp()) + '.json';
+}
+
+function buildLatestBackupFileName(kind) {
+  return 'task-reminder_latest_' + kind + '.json';
+}
+
+function describeBackupFileName(fileName) {
+  const name = String(fileName || '');
+  let m = name.match(/^task-reminder_latest_(tasks|config)\.json$/);
+  if (m) {
+    const kind = m[1];
+    return {
+      kind,
+      isLatest: true,
+      displayName: kind === 'tasks' ? '最新任务状态' : '最新配置 / Key 状态',
+      backupTypeLabel: '智能备份 · 最新状态'
+    };
+  }
+
+  m = name.match(/^task-reminder_backup_(tasks|config|both)_(\d{8})_(\d{6})\.json$/);
+  if (m) {
+    const kind = m[1];
+    return {
+      kind,
+      isLatest: false,
+      displayName: kind === 'tasks' ? '任务历史备份' : (kind === 'config' ? '配置 / Key 历史备份' : '旧版完整备份'),
+      backupTypeLabel: kind === 'both' ? '旧版 · 任务 + 配置 / Key' : '历史版本'
+    };
+  }
+
+  return { kind: 'both', isLatest: false, displayName: name, backupTypeLabel: '旧版备份' };
+}
+
+async function trimRemoteBackupsByKind(kv, config, settings, kind, maxCount) {
   const items = await listRemoteBackups(kv, config, settings);
   const keep = Math.max(1, parseInt(maxCount) || 20);
-  if (items.length <= keep) return 0;
+  const sameKindHistory = items.filter(item => {
+    const meta = describeBackupFileName(item.fileName);
+    return !meta.isLatest && meta.kind === kind;
+  });
+  if (sameKindHistory.length <= keep) return 0;
 
-  const oldItems = items.slice(keep);
+  const oldItems = sameKindHistory.slice(keep);
   let deleted = 0;
   for (const item of oldItems) {
     try {
@@ -5715,16 +6344,64 @@ async function trimRemoteBackups(kv, config, settings, maxCount) {
   return deleted;
 }
 
-function buildBackupFileName(scope) {
-  const bj = new Date(Date.now() + 8 * 60 * 60 * 1000);
-  const stamp =
-    String(bj.getUTCFullYear()) +
-    String(bj.getUTCMonth() + 1).padStart(2, '0') +
-    String(bj.getUTCDate()).padStart(2, '0') + '_' +
-    String(bj.getUTCHours()).padStart(2, '0') +
-    String(bj.getUTCMinutes()).padStart(2, '0') +
-    String(bj.getUTCSeconds()).padStart(2, '0');
-  return 'task-reminder_backup_' + scope + '_' + stamp + '.json';
+function stableStringify(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
+  const keys = Object.keys(value).sort();
+  return '{' + keys.map(key => JSON.stringify(key) + ':' + stableStringify(value[key])).join(',') + '}';
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text || '')));
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function comparableBackupData(payload, kind) {
+  if (kind === 'tasks') {
+    return {
+      tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
+      trash: Array.isArray(payload.trash) ? payload.trash : [],
+      histories: payload.histories && typeof payload.histories === 'object' ? payload.histories : {}
+    };
+  }
+  return {
+    config: payload.config && typeof payload.config === 'object' ? payload.config : {},
+    keys: payload.keys && typeof payload.keys === 'object' ? payload.keys : {}
+  };
+}
+
+async function getBackupPayloadHash(payload, kind) {
+  return sha256Hex(stableStringify(comparableBackupData(payload, kind)));
+}
+
+const BACKUP_HISTORY_MAX = 20;
+const BACKUP_HISTORY_INTERVAL_MS = 30 * 60 * 1000;
+const BACKUP_HASH_TASKS_KEY = 'backup_hash_tasks';
+const BACKUP_HASH_CONFIG_KEY = 'backup_hash_config';
+const BACKUP_HISTORY_LAST_TASKS_KEY = 'backup_history_last_tasks';
+const BACKUP_HISTORY_LAST_CONFIG_KEY = 'backup_history_last_config';
+
+async function writeBackupKind(kv, config, settings, kind, options = {}) {
+  const payload = options.payload || await buildBackupPayload(kv, kind, {
+    backupType: options.backupType || 'manual',
+    reason: options.reason || ''
+  });
+  const hash = options.hash || await getBackupPayloadHash(payload, kind);
+  const latestName = buildLatestBackupFileName(kind);
+
+  await putRemoteBackup(kv, config, settings, latestName, payload);
+  await kv.put(kind === 'tasks' ? BACKUP_HASH_TASKS_KEY : BACKUP_HASH_CONFIG_KEY, hash);
+
+  let historyName = '';
+  let deletedOld = 0;
+  if (options.createHistory) {
+    historyName = buildBackupFileName(kind, options.stamp || buildBackupTimestamp());
+    await putRemoteBackup(kv, config, settings, historyName, payload);
+    await kv.put(kind === 'tasks' ? BACKUP_HISTORY_LAST_TASKS_KEY : BACKUP_HISTORY_LAST_CONFIG_KEY, String(Date.now()));
+    deletedOld = await trimRemoteBackupsByKind(kv, config, settings, kind, BACKUP_HISTORY_MAX);
+  }
+
+  return { latestName, historyName, hash, deletedOld };
 }
 
 const BACKUP_KEY_FIELDS = [
@@ -5759,9 +6436,12 @@ const BACKUP_CONNECTION_FIELDS = [
   'onedriveRefreshToken',
   'onedriveAccessToken',
   'onedriveAccessTokenExpiresAt',
+  'onedriveFolderId',
+  'onedriveFolderPath',
   'jwtSecret',
   'backupAutoLastAt',
-  'backupAutoLastError'
+  'backupAutoLastError',
+  'backupAutoLastSummary'
 ];
 
 function splitConfigForBackup(rawConfig) {
@@ -5977,12 +6657,13 @@ function queueAutoBackup(ctx, kv, reason) {
   if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(job);
 }
 
-async function updateAutoBackupStatus(kv, success, errorMessage) {
+async function updateAutoBackupStatus(kv, success, errorMessage, summary) {
   try {
     const raw = await kv.get('config');
     const cfg = raw ? JSON.parse(raw) : {};
     cfg.backupAutoLastAt = new Date().toISOString();
     cfg.backupAutoLastError = success ? '' : String(errorMessage || '自动备份失败').slice(0, 180);
+    cfg.backupAutoLastSummary = success ? String(summary || '').slice(0, 180) : '';
     await kv.put('config', JSON.stringify(cfg));
   } catch (e) {}
 }
@@ -6017,16 +6698,59 @@ async function scheduleAutoBackup(kv, reason) {
     const latestSettings = getBackupSettingsFromConfig(latestConfig);
     if (latestSettings.autoEnabled === false) return;
 
-    const payload = await buildBackupPayload(kv, 'both', {
+    const tasksPayload = await buildBackupPayload(kv, 'tasks', {
       backupType: 'auto',
       reason: pending.reason || reason || ''
     });
-    const fileName = buildBackupFileName('both');
-    await putRemoteBackup(kv, latestConfig, latestSettings, fileName, payload);
-    await trimRemoteBackups(kv, latestConfig, latestSettings, 20);
-    await updateAutoBackupStatus(kv, true, '');
+    const configPayload = await buildBackupPayload(kv, 'config', {
+      backupType: 'auto',
+      reason: pending.reason || reason || ''
+    });
+
+    const taskHash = await getBackupPayloadHash(tasksPayload, 'tasks');
+    const configHash = await getBackupPayloadHash(configPayload, 'config');
+    const oldTaskHash = await kv.get(BACKUP_HASH_TASKS_KEY);
+    const oldConfigHash = await kv.get(BACKUP_HASH_CONFIG_KEY);
+    const taskChanged = oldTaskHash !== taskHash;
+    const configChanged = oldConfigHash !== configHash;
+
+    if (!taskChanged && !configChanged) {
+      await updateAutoBackupStatus(kv, true, '', '内容无变化，未生成新备份');
+      return;
+    }
+
+    const now = Date.now();
+    const summary = [];
+
+    if (taskChanged) {
+      const lastHistory = parseInt(await kv.get(BACKUP_HISTORY_LAST_TASKS_KEY), 10) || 0;
+      const createHistory = !lastHistory || now - lastHistory >= BACKUP_HISTORY_INTERVAL_MS;
+      await writeBackupKind(kv, latestConfig, latestSettings, 'tasks', {
+        payload: tasksPayload,
+        hash: taskHash,
+        backupType: 'auto',
+        reason: pending.reason || reason || '',
+        createHistory
+      });
+      summary.push(createHistory ? '任务：最新状态 + 历史版本' : '任务：更新最新状态');
+    }
+
+    if (configChanged) {
+      const lastHistory = parseInt(await kv.get(BACKUP_HISTORY_LAST_CONFIG_KEY), 10) || 0;
+      const createHistory = !lastHistory || now - lastHistory >= BACKUP_HISTORY_INTERVAL_MS;
+      await writeBackupKind(kv, latestConfig, latestSettings, 'config', {
+        payload: configPayload,
+        hash: configHash,
+        backupType: 'auto',
+        reason: pending.reason || reason || '',
+        createHistory
+      });
+      summary.push(createHistory ? '配置/Key：最新状态 + 历史版本' : '配置/Key：更新最新状态');
+    }
+
+    await updateAutoBackupStatus(kv, true, '', summary.join('；'));
   } catch (e) {
-    await updateAutoBackupStatus(kv, false, e && e.message ? e.message : String(e || '自动备份失败'));
+    await updateAutoBackupStatus(kv, false, e && e.message ? e.message : String(e || '自动备份失败'), '');
   } finally {
     const latestPending = await kv.get(AUTO_BACKUP_PENDING_KEY);
     if (latestPending) {
