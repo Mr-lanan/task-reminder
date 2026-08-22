@@ -554,28 +554,47 @@ function getDashboardPage() {
   </div>
 </div>
 
-<!-- WebDAV 备份弹窗 -->
+<!-- 远端备份弹窗 -->
 <div class="modal" id="backupModal">
   <div class="modal-content">
-    <h2>☁️ WebDAV 备份</h2>
-    <div class="mode-hint" style="margin-bottom:14px;">支持坚果云及通用 WebDAV（Nextcloud、群晖等）。远端最多保留最近 20 份，超过后自动删除最早备份。</div>
+    <h2>☁️ 远端备份</h2>
+    <div class="mode-hint" style="margin-bottom:14px;">支持 OneDrive 与通用 WebDAV（Nextcloud、群晖等）。远端最多保留最近 20 份，超过后自动删除最早备份。</div>
 
-    <label>WebDAV 类型</label>
+    <label>备份位置</label>
     <select id="backupProvider" onchange="updateBackupProvider()">
-      <option value="nutstore">坚果云</option>
+      <option value="onedrive">OneDrive</option>
       <option value="custom">通用 WebDAV</option>
     </select>
 
-    <label>WebDAV 地址</label>
-    <input type="text" id="backupUrl" placeholder="https://dav.jianguoyun.com/dav/">
+    <div id="onedriveFields">
+      <label>Microsoft 租户</label>
+      <input type="text" id="onedriveTenant" value="common" placeholder="common">
+      <div class="mode-hint" style="margin-top:-8px;margin-bottom:12px;">个人 Microsoft 账号或同时支持个人/组织账号时可使用 common。</div>
 
-    <label>备份目录 / 标识</label>
-    <input type="text" id="backupFolder" value="TaskReminderBackup" placeholder="TaskReminderBackup">
-    <div class="mode-hint" id="backupFolderHint" style="margin-top:-8px;margin-bottom:12px;">坚果云兼容模式：不创建远端目录；备份文件和索引直接保存到 /dav/ 根目录，并使用该名称作为文件前缀，避免根目录 PROPFIND/MKCOL 兼容问题；通用 WebDAV 则使用实际目录。</div>
+      <label>Client ID</label>
+      <input type="text" id="onedriveClientId" autocomplete="off" placeholder="Microsoft Entra 应用的 Application (client) ID">
 
-    <div class="form-row">
-      <div><label>用户名</label><input type="text" id="backupUsername" autocomplete="username"></div>
-      <div><label>密码 / 应用密码</label><input type="password" id="backupPassword" autocomplete="current-password"></div>
+      <label>Client Secret</label>
+      <input type="password" id="onedriveClientSecret" autocomplete="new-password" placeholder="Microsoft Entra 应用的客户端密码">
+
+      <label>授权回调地址</label>
+      <input type="text" id="onedriveRedirectUri" readonly>
+      <div class="mode-hint" style="margin-top:-8px;margin-bottom:8px;">请把此地址添加到 Microsoft Entra 应用的 Web 重定向 URI。OneDrive 使用应用专属文件夹，仅申请 Files.ReadWrite.AppFolder 权限。</div>
+      <div class="lunar-display" id="onedriveStatus" style="margin-top:0;margin-bottom:12px;">OneDrive：未连接</div>
+    </div>
+
+    <div id="webdavFields" style="display:none;">
+      <label>WebDAV 地址</label>
+      <input type="text" id="backupUrl" placeholder="https://example.com/remote.php/dav/files/user/">
+
+      <label>备份目录</label>
+      <input type="text" id="backupFolder" value="TaskReminderBackup" placeholder="TaskReminderBackup">
+      <div class="mode-hint" id="backupFolderHint" style="margin-top:-8px;margin-bottom:12px;">通用 WebDAV：系统会按需创建该远端目录。</div>
+
+      <div class="form-row">
+        <div><label>用户名</label><input type="text" id="backupUsername" autocomplete="username"></div>
+        <div><label>密码 / 应用密码</label><input type="password" id="backupPassword" autocomplete="current-password"></div>
+      </div>
     </div>
 
     <label>备份内容</label>
@@ -594,9 +613,11 @@ function getDashboardPage() {
 
     <div class="form-actions" style="justify-content:flex-start;flex-wrap:wrap;">
       <button class="btn-config" onclick="saveBackupSettings()">保存连接</button>
-      <button class="btn-warning" onclick="testWebDavConnection()">测试连接</button>
-      <button class="btn-backup" onclick="createWebDavBackup()">立即备份</button>
-      <button class="btn-history" onclick="loadWebDavBackups()">刷新列表</button>
+      <button class="btn-success" id="onedriveConnectBtn" onclick="connectOneDrive()">连接 OneDrive</button>
+      <button class="btn-warning" onclick="testBackupConnection()">测试连接</button>
+      <button class="btn-backup" onclick="createRemoteBackup()">立即备份</button>
+      <button class="btn-history" onclick="loadRemoteBackups()">刷新列表</button>
+      <button class="btn-danger" id="onedriveDisconnectBtn" style="display:none;" onclick="disconnectOneDrive()">断开 OneDrive</button>
     </div>
 
     <hr style="margin:18px 0;">
@@ -2178,28 +2199,36 @@ async function clearTrash() {
   }
 }
 
-// ===== WebDAV 备份 =====
+// ===== 远端备份 =====
 function updateBackupProvider() {
-  const provider = document.getElementById('backupProvider').value;
-  const urlInput = document.getElementById('backupUrl');
-  const hint = document.getElementById('backupFolderHint');
+  const provider = document.getElementById('backupProvider').value || 'onedrive';
+  const onedriveFields = document.getElementById('onedriveFields');
+  const webdavFields = document.getElementById('webdavFields');
+  const connectBtn = document.getElementById('onedriveConnectBtn');
+  const disconnectBtn = document.getElementById('onedriveDisconnectBtn');
 
-  if (provider === 'nutstore' && (!urlInput.value || urlInput.value.includes('jianguoyun.com'))) {
-    urlInput.value = 'https://dav.jianguoyun.com/dav/';
-  }
+  if (onedriveFields) onedriveFields.style.display = provider === 'onedrive' ? 'block' : 'none';
+  if (webdavFields) webdavFields.style.display = provider === 'custom' ? 'block' : 'none';
+  if (connectBtn) connectBtn.style.display = provider === 'onedrive' ? 'inline-block' : 'none';
 
-  if (hint) {
-    hint.textContent = provider === 'nutstore'
-      ? '坚果云兼容模式：不创建远端目录；使用文件前缀 + 索引文件管理备份，不再读取 /dav/ 根目录列表。'
-      : '通用 WebDAV：这里作为实际远端目录使用，系统会按需创建。';
+  if (provider !== 'onedrive' && disconnectBtn) {
+    disconnectBtn.style.display = 'none';
   }
+}
+
+function updateOneDriveStatus(connected) {
+  const status = document.getElementById('onedriveStatus');
+  const disconnectBtn = document.getElementById('onedriveDisconnectBtn');
+  if (status) status.textContent = connected ? 'OneDrive：✅ 已连接' : 'OneDrive：未连接';
+  if (disconnectBtn) disconnectBtn.style.display = connected ? 'inline-block' : 'none';
 }
 
 async function openBackupModal() {
   openModal('backupModal');
   const backupList = document.getElementById('backupList');
   backupList.innerHTML = '<p style="color:#999;">正在读取...</p>';
-  let hasSavedSettings = false;
+  document.getElementById('onedriveRedirectUri').value = window.location.origin + '/api/onedrive/callback';
+  let canLoadList = false;
 
   try {
     const resp = await fetch('/api/backup-settings', { headers: getHeaders() });
@@ -2207,39 +2236,57 @@ async function openBackupModal() {
 
     if (data.success) {
       const settings = data.settings || {};
-      document.getElementById('backupProvider').value = settings.provider || 'nutstore';
-      document.getElementById('backupUrl').value = settings.url || 'https://dav.jianguoyun.com/dav/';
+      document.getElementById('backupProvider').value = settings.provider || 'onedrive';
+      document.getElementById('backupScope').value = settings.scope || 'both';
+
+      document.getElementById('onedriveTenant').value = settings.tenant || 'common';
+      document.getElementById('onedriveClientId').value = settings.clientId || '';
+      document.getElementById('onedriveClientSecret').value = settings.clientSecret || '';
+      updateOneDriveStatus(!!settings.onedriveConnected);
+
+      document.getElementById('backupUrl').value = settings.url || '';
       document.getElementById('backupFolder').value = settings.folder || 'TaskReminderBackup';
       document.getElementById('backupUsername').value = settings.username || '';
       document.getElementById('backupPassword').value = settings.password || '';
-      document.getElementById('backupScope').value = settings.scope || 'both';
-      hasSavedSettings = !!(settings.url && settings.username && settings.password);
+
+      const provider = settings.provider || 'onedrive';
+      canLoadList = provider === 'onedrive'
+        ? !!settings.onedriveConnected
+        : !!(settings.url && settings.username && settings.password);
       updateBackupProvider();
     }
   } catch (e) {}
 
-  if (hasSavedSettings) {
-    await loadWebDavBackups();
+  if (canLoadList) {
+    await loadRemoteBackups();
   } else {
-    backupList.innerHTML = '<p style="color:#999;text-align:center;">请先填写并保存 WebDAV 连接</p>';
+    backupList.innerHTML = '<p style="color:#999;text-align:center;">请先配置并连接远端备份</p>';
   }
 }
 
 function getBackupSettingsFromForm() {
   return {
-    provider: document.getElementById('backupProvider').value || 'nutstore',
+    provider: document.getElementById('backupProvider').value || 'onedrive',
+    scope: document.getElementById('backupScope').value || 'both',
+    tenant: document.getElementById('onedriveTenant').value.trim() || 'common',
+    clientId: document.getElementById('onedriveClientId').value.trim(),
+    clientSecret: document.getElementById('onedriveClientSecret').value,
     url: document.getElementById('backupUrl').value.trim(),
     folder: document.getElementById('backupFolder').value.trim() || 'TaskReminderBackup',
     username: document.getElementById('backupUsername').value.trim(),
-    password: document.getElementById('backupPassword').value,
-    scope: document.getElementById('backupScope').value || 'both'
+    password: document.getElementById('backupPassword').value
   };
 }
 
 async function saveBackupSettings(showSuccess) {
   const settings = getBackupSettingsFromForm();
 
-  if (!settings.url || !settings.username || !settings.password) {
+  if (settings.provider === 'onedrive') {
+    if (!settings.clientId || !settings.clientSecret) {
+      showToast('请填写 OneDrive Client ID 和 Client Secret', 'error');
+      return false;
+    }
+  } else if (!settings.url || !settings.username || !settings.password) {
     showToast('请填写 WebDAV 地址、用户名和密码/应用密码', 'error');
     return false;
   }
@@ -2253,47 +2300,108 @@ async function saveBackupSettings(showSuccess) {
     const data = await resp.json();
 
     if (!data.success) {
-      showToast(data.message || '保存 WebDAV 配置失败', 'error');
+      showToast(data.message || '保存远端备份配置失败', 'error');
       return false;
     }
 
-    if (showSuccess !== false) showToast('WebDAV 配置已保存');
+    updateOneDriveStatus(!!data.onedriveConnected);
+    if (showSuccess !== false) showToast('远端备份配置已保存');
     return true;
   } catch (e) {
-    showToast('保存 WebDAV 配置失败', 'error');
+    showToast('保存远端备份配置失败', 'error');
     return false;
   }
 }
 
-async function testWebDavConnection() {
-  const settings = getBackupSettingsFromForm();
+async function connectOneDrive() {
+  if (document.getElementById('backupProvider').value !== 'onedrive') return;
 
-  if (!settings.url || !settings.username || !settings.password) {
-    showToast('请填写 WebDAV 地址、用户名和密码/应用密码', 'error');
+  const popup = window.open('about:blank', 'onedriveAuth', 'width=560,height=760');
+  if (!popup) {
+    showToast('浏览器阻止了授权窗口，请允许弹出窗口后重试', 'error');
     return;
   }
 
-  showToast('正在测试 WebDAV 连接...');
+  if (!await saveBackupSettings(false)) {
+    popup.close();
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/onedrive/auth-url', { headers: getHeaders() });
+    const data = await resp.json();
+    if (!data.success || !data.authorizationUrl) {
+      popup.close();
+      showToast(data.message || '生成 OneDrive 授权地址失败', 'error');
+      return;
+    }
+    document.getElementById('onedriveRedirectUri').value = data.redirectUri || (window.location.origin + '/api/onedrive/callback');
+    popup.location.href = data.authorizationUrl;
+  } catch (e) {
+    popup.close();
+    showToast('连接 OneDrive 失败', 'error');
+  }
+}
+
+async function disconnectOneDrive() {
+  if (!confirm('确定断开 OneDrive？远端已有备份不会被删除。')) return;
+
+  try {
+    const resp = await fetch('/api/onedrive/disconnect', {
+      method: 'POST',
+      headers: getHeaders()
+    });
+    const data = await resp.json();
+    if (data.success) {
+      updateOneDriveStatus(false);
+      document.getElementById('backupList').innerHTML = '<p style="color:#999;text-align:center;">OneDrive 已断开</p>';
+      showToast('OneDrive 已断开');
+    } else {
+      showToast(data.message || '断开 OneDrive 失败', 'error');
+    }
+  } catch (e) {
+    showToast('断开 OneDrive 失败', 'error');
+  }
+}
+
+window.addEventListener('message', async (event) => {
+  if (event.origin !== window.location.origin) return;
+  if (!event.data || event.data.type !== 'task-reminder-onedrive-connected') return;
+
+  if (!event.data.success) {
+    updateOneDriveStatus(false);
+    showToast('OneDrive 授权失败，请检查配置后重试', 'error');
+    return;
+  }
+
+  updateOneDriveStatus(true);
+  showToast('OneDrive 已连接');
+  await loadRemoteBackups();
+});
+
+async function testBackupConnection() {
+  if (!await saveBackupSettings(false)) return;
+  showToast('正在测试远端连接...');
 
   try {
     const resp = await fetch('/api/backup-test', {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify(settings)
+      body: JSON.stringify({ provider: document.getElementById('backupProvider').value })
     });
     const data = await resp.json();
 
     if (data.success) {
-      showToast(data.message || 'WebDAV 连接测试成功');
+      showToast(data.message || '远端连接测试成功');
     } else {
-      showToast(data.message || 'WebDAV 连接测试失败', 'error');
+      showToast(data.message || '远端连接测试失败', 'error');
     }
   } catch (e) {
-    showToast('WebDAV 连接测试失败', 'error');
+    showToast('远端连接测试失败', 'error');
   }
 }
 
-async function createWebDavBackup() {
+async function createRemoteBackup() {
   if (!await saveBackupSettings(false)) return;
 
   const scope = document.getElementById('backupScope').value || 'both';
@@ -2309,7 +2417,7 @@ async function createWebDavBackup() {
 
     if (data.success) {
       showToast('备份成功：' + (data.fileName || ''));
-      await loadWebDavBackups();
+      await loadRemoteBackups();
     } else {
       showToast(data.message || '备份失败', 'error');
     }
@@ -2318,7 +2426,7 @@ async function createWebDavBackup() {
   }
 }
 
-async function loadWebDavBackups() {
+async function loadRemoteBackups() {
   const list = document.getElementById('backupList');
   if (!list) return;
   list.innerHTML = '<p style="color:#999;">正在读取...</p>';
@@ -2344,8 +2452,8 @@ async function loadWebDavBackups() {
         '<div><strong>' + escapeHtml(item.fileName || '-') + '</strong></div>' +
         '<div>🕒 ' + escapeHtml(item.modified || '-') + '　📦 ' + size + '</div>' +
         '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">' +
-          '<button class="btn-success btn-sm" onclick="restoreWebDavBackup(\\'' + encodeURIComponent(item.fileName) + '\\')">恢复</button>' +
-          '<button class="btn-danger btn-sm" onclick="deleteWebDavBackup(\\'' + encodeURIComponent(item.fileName) + '\\')">删除</button>' +
+          '<button class="btn-success btn-sm" onclick="restoreRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">恢复</button>' +
+          '<button class="btn-danger btn-sm" onclick="deleteRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">删除</button>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -2354,7 +2462,7 @@ async function loadWebDavBackups() {
   }
 }
 
-async function restoreWebDavBackup(encodedFileName) {
+async function restoreRemoteBackup(encodedFileName) {
   const fileName = decodeURIComponent(encodedFileName);
   const expiredPolicy = document.getElementById('backupExpiredPolicy').value || 'expired';
   const policyText = expiredPolicy === 'push'
@@ -2372,8 +2480,11 @@ async function restoreWebDavBackup(encodedFileName) {
     const data = await resp.json();
 
     if (data.success) {
-      showToast('恢复完成：任务 ' + (data.restoredTasks || 0) + '，配置 ' + (data.restoredConfig ? '已恢复' : '未包含'));
-      loadTasks();
+      let msg = '恢复完成：任务 ' + (data.restoredTasks || 0) + '，回收站 ' + (data.restoredTrash || 0);
+      if (data.restoredConfig) msg += '，配置已恢复';
+      if (data.pushedExpired) msg += '，立即推送 ' + data.pushedExpired + ' 条';
+      showToast(msg);
+      await loadTasks();
     } else {
       showToast(data.message || '恢复失败', 'error');
     }
@@ -2382,7 +2493,7 @@ async function restoreWebDavBackup(encodedFileName) {
   }
 }
 
-async function deleteWebDavBackup(encodedFileName) {
+async function deleteRemoteBackup(encodedFileName) {
   const fileName = decodeURIComponent(encodedFileName);
   if (!confirm('确定删除远端备份“' + fileName + '”？')) return;
 
@@ -2395,7 +2506,7 @@ async function deleteWebDavBackup(encodedFileName) {
 
     if (data.success) {
       showToast('远端备份已删除');
-      await loadWebDavBackups();
+      await loadRemoteBackups();
     } else {
       showToast(data.message || '删除失败', 'error');
     }
@@ -3225,6 +3336,54 @@ export default {
       });
     }
 
+    // ---------- OneDrive OAuth 回调（Microsoft 重定向回此地址时没有本系统 Bearer Token） ----------
+    if (path === '/api/onedrive/callback' && method === 'GET') {
+      const state = url.searchParams.get('state') || '';
+      const code = url.searchParams.get('code') || '';
+      const oauthError = url.searchParams.get('error') || '';
+      const oauthErrorDescription = url.searchParams.get('error_description') || '';
+
+      const htmlResponse = (ok, message) => new Response(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>OneDrive 授权</title>
+<style>body{font-family:-apple-system,sans-serif;background:#f0f2f5;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.box{background:#fff;padding:28px;border-radius:14px;max-width:520px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1);text-align:center}.ok{color:#1b8f4d}.err{color:#d63031}</style></head>
+<body><div class="box"><h2 class="${ok ? 'ok' : 'err'}">${ok ? '✅ OneDrive 已连接' : '❌ OneDrive 连接失败'}</h2><p>${escapeHtmlServer(message)}</p><p style="color:#888;font-size:13px;">${ok ? '可以关闭此窗口并返回任务提醒页面。' : '请关闭窗口，检查 OneDrive 配置后重试。'}</p></div>
+<script>try{if(window.opener){window.opener.postMessage({type:'task-reminder-onedrive-connected',success:${ok ? 'true' : 'false'}},window.location.origin);}}catch(e){}${ok ? 'setTimeout(()=>window.close(),1200);' : ''}</script></body></html>`, {
+        status: ok ? 200 : 400,
+        headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+      });
+
+      if (oauthError) {
+        return htmlResponse(false, oauthErrorDescription || oauthError);
+      }
+      if (!state || !code) {
+        return htmlResponse(false, '授权回调缺少 code 或 state');
+      }
+
+      const stateKey = 'onedrive_oauth_state_' + state;
+      const stateRaw = await kv.get(stateKey);
+      await kv.delete(stateKey);
+      if (!stateRaw) {
+        return htmlResponse(false, '授权状态已失效，请重新发起连接');
+      }
+
+      let stateData = {};
+      try { stateData = JSON.parse(stateRaw); } catch (e) {}
+
+      try {
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
+        validateOneDriveSettings(settings, false);
+        const redirectUri = stateData.redirectUri || (url.origin + '/api/onedrive/callback');
+        const tokenData = await exchangeOneDriveAuthorizationCode(settings, code, redirectUri);
+        await verifyOneDriveToken(tokenData.access_token);
+        await saveOneDriveTokens(kv, tokenData);
+        return htmlResponse(true, '授权成功，备份将保存到 OneDrive 的应用专属文件夹。');
+      } catch (e) {
+        return htmlResponse(false, e.message || 'OneDrive 授权失败');
+      }
+    }
+
     const auth = request.headers.get('Authorization');
     let authed = false;
 
@@ -3708,36 +3867,68 @@ export default {
       });
     }
 
-    // ---------- WebDAV 备份设置 ----------
+    // ---------- 远端备份设置 ----------
     if (path === '/api/backup-settings' && method === 'GET') {
-      const settings = getWebDavSettingsFromConfig(config);
+      const settings = getBackupSettingsFromConfig(config);
 
       return new Response(JSON.stringify({
         success: true,
-        settings
+        settings: publicBackupSettings(settings)
       }), {
         headers: corsHeaders
       });
     }
 
     if (path === '/api/backup-settings' && method === 'POST') {
-      const body = await request.json();
-      const settings = normalizeWebDavSettings(body);
+      try {
+        const body = await request.json();
+        const result = await saveBackupSettingsToConfig(kv, body);
 
-      if (!settings.url || !settings.username || !settings.password) {
-        return errorResponse('请填写 WebDAV 地址、用户名和密码/应用密码', 400);
+        return new Response(JSON.stringify({
+          success: true,
+          onedriveConnected: !!result.onedriveConnected
+        }), {
+          headers: corsHeaders
+        });
+      } catch (e) {
+        return errorResponse(e.message || '保存远端备份配置失败', 400);
       }
+    }
 
+    // ---------- OneDrive OAuth ----------
+    if (path === '/api/onedrive/auth-url' && method === 'GET') {
+      try {
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
+        if (settings.provider !== 'onedrive') throw new Error('当前备份位置不是 OneDrive');
+        validateOneDriveSettings(settings, false);
+
+        const redirectUri = url.origin + '/api/onedrive/callback';
+        const state = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+        await kv.put('onedrive_oauth_state_' + state, JSON.stringify({
+          redirectUri,
+          createdAt: new Date().toISOString()
+        }), { expirationTtl: 10 * 60 });
+
+        return new Response(JSON.stringify({
+          success: true,
+          authorizationUrl: buildOneDriveAuthorizationUrl(settings, redirectUri, state),
+          redirectUri
+        }), {
+          headers: corsHeaders
+        });
+      } catch (e) {
+        return errorResponse(e.message || '生成 OneDrive 授权地址失败', 400);
+      }
+    }
+
+    if (path === '/api/onedrive/disconnect' && method === 'POST') {
       const rawConfig = await kv.get('config');
       const existing = rawConfig ? JSON.parse(rawConfig) : {};
-
-      existing.webdavProvider = settings.provider;
-      existing.webdavUrl = settings.url;
-      existing.webdavFolder = settings.folder;
-      existing.webdavUsername = settings.username;
-      existing.webdavPassword = settings.password;
-      existing.webdavBackupScope = settings.scope;
-
+      delete existing.onedriveRefreshToken;
+      delete existing.onedriveAccessToken;
+      delete existing.onedriveAccessTokenExpiresAt;
       await kv.put('config', JSON.stringify(existing));
 
       return new Response(JSON.stringify({ success: true }), {
@@ -3745,13 +3936,13 @@ export default {
       });
     }
 
-    // ---------- WebDAV 连接测试 ----------
+    // ---------- 远端连接测试 ----------
     if (path === '/api/backup-test' && method === 'POST') {
       try {
-        const body = await request.json();
-        const settings = normalizeWebDavSettings(body);
-        validateWebDavSettings(settings);
-        const result = await testWebDavConnectionForWorker(settings);
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
+        const result = await testRemoteBackupConnection(kv, latestConfig, settings);
 
         return new Response(JSON.stringify({
           success: true,
@@ -3760,16 +3951,17 @@ export default {
           headers: corsHeaders
         });
       } catch (e) {
-        return errorResponse(e.message || 'WebDAV 连接测试失败', 500);
+        return errorResponse(e.message || '远端连接测试失败', 500);
       }
     }
 
-    // ---------- WebDAV 备份列表 ----------
+    // ---------- 远端备份列表 ----------
     if (path === '/api/backups' && method === 'GET') {
       try {
-        const settings = getWebDavSettingsFromConfig(config);
-        validateWebDavSettings(settings);
-        const items = await listWebDavBackups(settings);
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
+        const items = await listRemoteBackups(kv, latestConfig, settings);
 
         return new Response(JSON.stringify({
           success: true,
@@ -3778,22 +3970,23 @@ export default {
           headers: corsHeaders
         });
       } catch (e) {
-        return errorResponse(e.message || '读取 WebDAV 备份失败', 500);
+        return errorResponse(e.message || '读取远端备份失败', 500);
       }
     }
 
-    // ---------- 创建 WebDAV 备份 ----------
+    // ---------- 创建远端备份 ----------
     if (path === '/api/backups' && method === 'POST') {
       try {
         const body = await request.json();
-        const settings = getWebDavSettingsFromConfig(config);
-        validateWebDavSettings(settings);
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
         const scope = ['config', 'tasks', 'both'].includes(body.scope) ? body.scope : (settings.scope || 'both');
         const payload = await buildBackupPayload(kv, scope);
         const fileName = buildBackupFileName(scope);
 
-        await putWebDavBackup(settings, fileName, payload);
-        const deletedOld = await trimWebDavBackups(settings, 20);
+        await putRemoteBackup(kv, latestConfig, settings, fileName, payload);
+        const deletedOld = await trimRemoteBackups(kv, latestConfig, settings, 20);
 
         return new Response(JSON.stringify({
           success: true,
@@ -3803,11 +3996,11 @@ export default {
           headers: corsHeaders
         });
       } catch (e) {
-        return errorResponse(e.message || 'WebDAV 备份失败', 500);
+        return errorResponse(e.message || '远端备份失败', 500);
       }
     }
 
-    // ---------- 恢复 WebDAV 备份 ----------
+    // ---------- 恢复远端备份 ----------
     if (path === '/api/backups/restore' && method === 'POST') {
       try {
         const body = await request.json();
@@ -3816,9 +4009,10 @@ export default {
 
         if (!isSafeBackupFileName(fileName)) return errorResponse('备份文件名无效', 400);
 
-        const settings = getWebDavSettingsFromConfig(config);
-        validateWebDavSettings(settings);
-        const backup = await getWebDavBackup(settings, fileName);
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
+        const backup = await getRemoteBackup(kv, latestConfig, settings, fileName);
         const result = await restoreBackupPayload(kv, config, backup, expiredPolicy);
 
         return new Response(JSON.stringify({
@@ -3828,25 +4022,26 @@ export default {
           headers: corsHeaders
         });
       } catch (e) {
-        return errorResponse(e.message || '恢复 WebDAV 备份失败', 500);
+        return errorResponse(e.message || '恢复远端备份失败', 500);
       }
     }
 
-    // ---------- 删除单个 WebDAV 备份 ----------
+    // ---------- 删除单个远端备份 ----------
     if (path.startsWith('/api/backups/') && method === 'DELETE') {
       try {
         const fileName = decodeURIComponent(path.slice('/api/backups/'.length));
         if (!isSafeBackupFileName(fileName)) return errorResponse('备份文件名无效', 400);
 
-        const settings = getWebDavSettingsFromConfig(config);
-        validateWebDavSettings(settings);
-        await deleteWebDavBackupFile(settings, fileName);
+        const latestRaw = await kv.get('config');
+        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+        const settings = getBackupSettingsFromConfig(latestConfig);
+        await deleteRemoteBackupFile(kv, latestConfig, settings, fileName);
 
         return new Response(JSON.stringify({ success: true }), {
           headers: corsHeaders
         });
       } catch (e) {
-        return errorResponse(e.message || '删除 WebDAV 备份失败', 500);
+        return errorResponse(e.message || '删除远端备份失败', 500);
       }
     }
 
@@ -4217,30 +4412,111 @@ async function cleanupExpiredTrash(kv, nowMs) {
   await kv.put(dayKey, '1', { expirationTtl: 2 * 24 * 60 * 60 });
 }
 
-function normalizeWebDavSettings(input) {
-  const provider = input && input.provider === 'custom' ? 'custom' : 'nutstore';
-  let url = String((input && input.url) || '').trim();
-  if (!url && provider === 'nutstore') url = 'https://dav.jianguoyun.com/dav/';
+function normalizeBackupProvider(value) {
+  return value === 'custom' ? 'custom' : 'onedrive';
+}
 
+function normalizeBackupSettings(input) {
+  input = input || {};
   return {
-    provider,
-    url,
-    folder: String((input && input.folder) || 'TaskReminderBackup').trim() || 'TaskReminderBackup',
-    username: String((input && input.username) || '').trim(),
-    password: String((input && input.password) || ''),
-    scope: ['config', 'tasks', 'both'].includes(input && input.scope) ? input.scope : 'both'
+    provider: normalizeBackupProvider(input.provider),
+    scope: ['config', 'tasks', 'both'].includes(input.scope) ? input.scope : 'both',
+    tenant: String(input.tenant || 'common').trim() || 'common',
+    clientId: String(input.clientId || '').trim(),
+    clientSecret: String(input.clientSecret || ''),
+    refreshToken: String(input.refreshToken || ''),
+    accessToken: String(input.accessToken || ''),
+    accessTokenExpiresAt: parseInt(input.accessTokenExpiresAt, 10) || 0,
+    url: String(input.url || '').trim(),
+    folder: String(input.folder || 'TaskReminderBackup').trim() || 'TaskReminderBackup',
+    username: String(input.username || '').trim(),
+    password: String(input.password || '')
   };
 }
 
-function getWebDavSettingsFromConfig(config) {
-  return normalizeWebDavSettings({
-    provider: config.webdavProvider,
+function getBackupSettingsFromConfig(config) {
+  const legacyProvider = config.backupProvider || (config.webdavUrl ? 'custom' : 'onedrive');
+  return normalizeBackupSettings({
+    provider: legacyProvider,
+    scope: config.backupScope || config.webdavBackupScope || 'both',
+    tenant: config.onedriveTenant || 'common',
+    clientId: config.onedriveClientId,
+    clientSecret: config.onedriveClientSecret,
+    refreshToken: config.onedriveRefreshToken,
+    accessToken: config.onedriveAccessToken,
+    accessTokenExpiresAt: config.onedriveAccessTokenExpiresAt,
     url: config.webdavUrl,
     folder: config.webdavFolder,
     username: config.webdavUsername,
-    password: config.webdavPassword,
-    scope: config.webdavBackupScope
+    password: config.webdavPassword
   });
+}
+
+function publicBackupSettings(settings) {
+  return {
+    provider: settings.provider,
+    scope: settings.scope,
+    tenant: settings.tenant,
+    clientId: settings.clientId,
+    clientSecret: settings.clientSecret,
+    onedriveConnected: !!settings.refreshToken,
+    url: settings.url,
+    folder: settings.folder,
+    username: settings.username,
+    password: settings.password
+  };
+}
+
+async function saveBackupSettingsToConfig(kv, input) {
+  const next = normalizeBackupSettings(input);
+  const rawConfig = await kv.get('config');
+  const existing = rawConfig ? JSON.parse(rawConfig) : {};
+  const previous = getBackupSettingsFromConfig(existing);
+
+  if (next.provider === 'onedrive') {
+    validateOneDriveSettings(next, false);
+  } else {
+    validateWebDavSettings(next);
+  }
+
+  existing.backupProvider = next.provider;
+  existing.backupScope = next.scope;
+  existing.webdavBackupScope = next.scope;
+
+  if (next.provider === 'onedrive') {
+    const identityChanged = previous.clientId !== next.clientId || previous.tenant !== next.tenant;
+    existing.onedriveTenant = next.tenant;
+    existing.onedriveClientId = next.clientId;
+    existing.onedriveClientSecret = next.clientSecret;
+
+    if (identityChanged) {
+      delete existing.onedriveRefreshToken;
+      delete existing.onedriveAccessToken;
+      delete existing.onedriveAccessTokenExpiresAt;
+    }
+  } else {
+    existing.webdavProvider = 'custom';
+    existing.webdavUrl = next.url;
+    existing.webdavFolder = next.folder;
+    existing.webdavUsername = next.username;
+    existing.webdavPassword = next.password;
+  }
+
+  await kv.put('config', JSON.stringify(existing));
+  const saved = getBackupSettingsFromConfig(existing);
+  return { onedriveConnected: !!saved.refreshToken };
+}
+
+function validateOneDriveSettings(settings, requireConnected = true) {
+  if (!settings.clientId || !settings.clientSecret) {
+    throw new Error('请先填写 OneDrive Client ID 和 Client Secret');
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(settings.tenant || 'common')) {
+    throw new Error('Microsoft 租户格式无效');
+  }
+  if (requireConnected && !settings.refreshToken) {
+    throw new Error('OneDrive 尚未授权，请先点击“连接 OneDrive”完成授权');
+  }
 }
 
 function validateWebDavSettings(settings) {
@@ -4251,6 +4527,212 @@ function validateWebDavSettings(settings) {
   let parsed;
   try { parsed = new URL(settings.url); } catch (e) { throw new Error('WebDAV 地址格式无效'); }
   if (!/^https?:$/.test(parsed.protocol)) throw new Error('WebDAV 地址必须使用 http 或 https');
+}
+
+function buildOneDriveAuthorizationUrl(settings, redirectUri, state) {
+  const tenant = encodeURIComponent(settings.tenant || 'common');
+  const params = new URLSearchParams({
+    client_id: settings.clientId,
+    response_type: 'code',
+    redirect_uri: redirectUri,
+    response_mode: 'query',
+    scope: 'offline_access Files.ReadWrite.AppFolder',
+    state
+  });
+  return 'https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/authorize?' + params.toString();
+}
+
+async function exchangeOneDriveAuthorizationCode(settings, code, redirectUri) {
+  const tenant = encodeURIComponent(settings.tenant || 'common');
+  const response = await fetch('https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: settings.clientId,
+      client_secret: settings.clientSecret,
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri,
+      scope: 'offline_access Files.ReadWrite.AppFolder'
+    }).toString()
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.access_token) {
+    throw new Error('Microsoft 授权换取令牌失败（HTTP ' + response.status + '）：' + String(data.error_description || data.error || '未知错误').slice(0, 180));
+  }
+  if (!data.refresh_token) {
+    throw new Error('Microsoft 未返回 refresh_token，请确认授权包含 offline_access');
+  }
+  return data;
+}
+
+async function verifyOneDriveToken(accessToken) {
+  const response = await fetch('https://graph.microsoft.com/v1.0/me/drive/special/approot', {
+    headers: { 'Authorization': 'Bearer ' + accessToken }
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error('OneDrive 应用文件夹访问失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 160) : '') + '）');
+  }
+  return true;
+}
+
+async function saveOneDriveTokens(kv, tokenData) {
+  const rawConfig = await kv.get('config');
+  const existing = rawConfig ? JSON.parse(rawConfig) : {};
+  existing.onedriveAccessToken = tokenData.access_token || existing.onedriveAccessToken || '';
+  if (tokenData.refresh_token) existing.onedriveRefreshToken = tokenData.refresh_token;
+  existing.onedriveAccessTokenExpiresAt = Date.now() + Math.max(60, parseInt(tokenData.expires_in, 10) || 3600) * 1000;
+  await kv.put('config', JSON.stringify(existing));
+}
+
+async function getOneDriveAccessToken(kv, config) {
+  const settings = getBackupSettingsFromConfig(config);
+  validateOneDriveSettings(settings, true);
+
+  if (settings.accessToken && settings.accessTokenExpiresAt > Date.now() + 2 * 60 * 1000) {
+    return settings.accessToken;
+  }
+
+  const tenant = encodeURIComponent(settings.tenant || 'common');
+  const response = await fetch('https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: settings.clientId,
+      client_secret: settings.clientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: settings.refreshToken,
+      scope: 'offline_access Files.ReadWrite.AppFolder'
+    }).toString()
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.access_token) {
+    throw new Error('OneDrive 登录状态已失效，请重新连接（HTTP ' + response.status + '）：' + String(data.error_description || data.error || '未知错误').slice(0, 180));
+  }
+
+  await saveOneDriveTokens(kv, data);
+  return data.access_token;
+}
+
+function oneDriveAppRootUrl(suffix = '') {
+  return 'https://graph.microsoft.com/v1.0/me/drive/special/approot' + suffix;
+}
+
+function oneDriveFileUrl(fileName, content = false) {
+  const path = ':/' + encodeURIComponent(fileName) + ':';
+  return oneDriveAppRootUrl(path + (content ? '/content' : ''));
+}
+
+async function listOneDriveBackups(kv, config) {
+  const token = await getOneDriveAccessToken(kv, config);
+  const response = await fetch(oneDriveAppRootUrl('/children?$select=name,size,lastModifiedDateTime,file&$top=200'), {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error('读取 OneDrive 备份列表失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
+  }
+
+  const data = await response.json();
+  const items = Array.isArray(data.value) ? data.value : [];
+  return items
+    .filter(item => item && item.file && isSafeBackupFileName(item.name))
+    .map(item => {
+      const modifiedDate = item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null;
+      return {
+        fileName: item.name,
+        modified: modifiedDate && !isNaN(modifiedDate.getTime())
+          ? modifiedDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
+          : '-',
+        modifiedMs: modifiedDate && !isNaN(modifiedDate.getTime()) ? modifiedDate.getTime() : 0,
+        size: parseInt(item.size, 10) || 0
+      };
+    })
+    .sort((a, b) => {
+      if (b.modifiedMs !== a.modifiedMs) return b.modifiedMs - a.modifiedMs;
+      return b.fileName.localeCompare(a.fileName);
+    });
+}
+
+async function putOneDriveBackup(kv, config, fileName, payload) {
+  const token = await getOneDriveAccessToken(kv, config);
+  const body = JSON.stringify(payload, null, 2);
+  const response = await fetch(oneDriveFileUrl(fileName, true), {
+    method: 'PUT',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error('上传 OneDrive 备份失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 140) : '') + '）');
+  }
+}
+
+async function getOneDriveBackup(kv, config, fileName) {
+  const token = await getOneDriveAccessToken(kv, config);
+  const response = await fetch(oneDriveFileUrl(fileName, true), {
+    headers: { 'Authorization': 'Bearer ' + token },
+    redirect: 'follow'
+  });
+  if (!response.ok) throw new Error('下载 OneDrive 备份失败（HTTP ' + response.status + '）');
+
+  let data;
+  try { data = await response.json(); } catch (e) { throw new Error('OneDrive 备份文件不是有效 JSON'); }
+  if (!data || data.format !== 'task-reminder-backup-v1') throw new Error('不是本系统支持的备份文件');
+  return data;
+}
+
+async function deleteOneDriveBackupFile(kv, config, fileName) {
+  const token = await getOneDriveAccessToken(kv, config);
+  const response = await fetch(oneDriveFileUrl(fileName, false), {
+    method: 'DELETE',
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (!(response.ok || response.status === 204 || response.status === 404)) {
+    throw new Error('删除 OneDrive 备份失败（HTTP ' + response.status + '）');
+  }
+}
+
+async function testOneDriveConnection(kv, config) {
+  const token = await getOneDriveAccessToken(kv, config);
+  await verifyOneDriveToken(token);
+
+  const fileName = 'task-reminder_connection-test-' + Date.now() + '.txt';
+  const testBody = 'Task Reminder OneDrive connection test ' + new Date().toISOString();
+  const putResponse = await fetch(oneDriveFileUrl(fileName, true), {
+    method: 'PUT',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'text/plain; charset=utf-8'
+    },
+    body: testBody
+  });
+  if (!putResponse.ok) throw new Error('OneDrive 写入测试失败（HTTP ' + putResponse.status + '）');
+
+  try {
+    const getResponse = await fetch(oneDriveFileUrl(fileName, true), {
+      headers: { 'Authorization': 'Bearer ' + token },
+      redirect: 'follow'
+    });
+    if (!getResponse.ok) throw new Error('OneDrive 读取测试失败（HTTP ' + getResponse.status + '）');
+    const returned = await getResponse.text();
+    if (returned !== testBody) throw new Error('OneDrive 读写校验失败：返回内容与测试内容不一致');
+  } finally {
+    await fetch(oneDriveFileUrl(fileName, false), {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token }
+    }).catch(() => null);
+  }
+
+  return { message: 'OneDrive 连接正常，应用文件夹读/写/删测试通过' };
 }
 
 function webDavAuthHeader(settings) {
@@ -4276,143 +4758,25 @@ function getWebDavFolderUrl(settings) {
   return normalizeWebDavBaseUrl(settings.url) + encodeWebDavPathPart(settings.folder) + '/';
 }
 
-function getNutstoreBackupPrefix(settings) {
-  const raw = String(settings.folder || 'TaskReminderBackup').trim() || 'TaskReminderBackup';
-  const safe = raw.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_');
-  return (safe || 'TaskReminderBackup') + '__';
-}
-
-function getNutstoreManifestFileName(settings) {
-  return getNutstoreBackupPrefix(settings) + 'manifest.json';
-}
-
-function getNutstoreManifestUrl(settings) {
-  return normalizeWebDavBaseUrl(settings.url) + encodeURIComponent(getNutstoreManifestFileName(settings));
-}
-
-function createEmptyNutstoreManifest() {
-  return {
-    format: 'task-reminder-webdav-manifest-v1',
-    items: []
-  };
-}
-
-async function readNutstoreManifest(settings) {
-  const response = await fetch(getNutstoreManifestUrl(settings), {
-    method: 'GET',
-    headers: {
-      'Authorization': webDavAuthHeader(settings),
-      'Cache-Control': 'no-cache'
-    }
-  });
-
-  if (response.status === 404) return createEmptyNutstoreManifest();
-
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + response.status + '）');
-    }
-    throw new Error('读取坚果云备份索引失败（HTTP ' + response.status + '）');
-  }
-
-  let manifest;
-  try {
-    manifest = await response.json();
-  } catch (e) {
-    throw new Error('坚果云备份索引格式无效');
-  }
-
-  if (!manifest || manifest.format !== 'task-reminder-webdav-manifest-v1' || !Array.isArray(manifest.items)) {
-    return createEmptyNutstoreManifest();
-  }
-
-  manifest.items = manifest.items.filter(item => item && isSafeBackupFileName(item.fileName));
-  return manifest;
-}
-
-async function writeNutstoreManifest(settings, manifest) {
-  const clean = {
-    format: 'task-reminder-webdav-manifest-v1',
-    updatedAt: new Date().toISOString(),
-    items: Array.isArray(manifest && manifest.items)
-      ? manifest.items.filter(item => item && isSafeBackupFileName(item.fileName)).slice(0, 100)
-      : []
-  };
-
-  const response = await fetch(getNutstoreManifestUrl(settings), {
-    method: 'PUT',
-    headers: {
-      'Authorization': webDavAuthHeader(settings),
-      'Content-Type': 'application/json; charset=utf-8'
-    },
-    body: JSON.stringify(clean, null, 2)
-  });
-
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + response.status + '）');
-    }
-    throw new Error('写入坚果云备份索引失败（HTTP ' + response.status + '）');
-  }
-}
-
-async function upsertNutstoreManifestEntry(settings, entry) {
-  const manifest = await readNutstoreManifest(settings);
-  manifest.items = (manifest.items || []).filter(item => item.fileName !== entry.fileName);
-  manifest.items.unshift(entry);
-  manifest.items.sort((a, b) => {
-    const am = parseInt(a.modifiedMs, 10) || 0;
-    const bm = parseInt(b.modifiedMs, 10) || 0;
-    if (bm !== am) return bm - am;
-    return String(b.fileName || '').localeCompare(String(a.fileName || ''));
-  });
-  await writeNutstoreManifest(settings, manifest);
-}
-
-async function removeNutstoreManifestEntry(settings, fileName) {
-  const manifest = await readNutstoreManifest(settings);
-  const before = manifest.items.length;
-  manifest.items = manifest.items.filter(item => item.fileName !== fileName);
-  if (manifest.items.length !== before) {
-    await writeNutstoreManifest(settings, manifest);
-  }
-}
-
 function getWebDavCollectionUrl(settings) {
-  if (settings.provider === 'nutstore') {
-    return normalizeWebDavBaseUrl(settings.url);
-  }
   return getWebDavFolderUrl(settings);
 }
 
-function getWebDavPhysicalFileName(settings, fileName) {
-  if (settings.provider === 'nutstore') {
-    return getNutstoreBackupPrefix(settings) + fileName;
-  }
-  return fileName;
-}
-
 function getWebDavFileUrl(settings, fileName) {
-  return getWebDavCollectionUrl(settings) + encodeURIComponent(getWebDavPhysicalFileName(settings, fileName));
+  return getWebDavCollectionUrl(settings) + encodeURIComponent(fileName);
 }
 
 async function ensureWebDavFolder(settings) {
-  // 坚果云兼容模式不执行 MKCOL。部分代理链路对 MKCOL 会返回 5xx，
-  // 因此直接使用 /dav/ 根目录并通过文件名前缀隔离本应用备份。
-  if (settings.provider === 'nutstore') return;
-
+  validateWebDavSettings(settings);
   const base = normalizeWebDavBaseUrl(settings.url);
   const parts = String(settings.folder || 'TaskReminderBackup').split('/').filter(Boolean);
   let current = base;
 
   for (const part of parts) {
     current += encodeURIComponent(part) + '/';
-
     const response = await fetch(current, {
       method: 'MKCOL',
-      headers: {
-        'Authorization': webDavAuthHeader(settings)
-      }
+      headers: { 'Authorization': webDavAuthHeader(settings) }
     });
 
     if (response.ok || response.status === 405 || response.status === 301 || response.status === 302) continue;
@@ -4424,7 +4788,6 @@ async function ensureWebDavFolder(settings) {
         'Depth': '0'
       }
     });
-
     if (!(check.ok || check.status === 207)) {
       throw new Error('无法创建/访问 WebDAV 备份目录（HTTP ' + response.status + '）');
     }
@@ -4445,32 +4808,7 @@ function isSafeBackupFileName(fileName) {
 }
 
 async function listWebDavBackups(settings) {
-  if (settings.provider === 'nutstore') {
-    const manifest = await readNutstoreManifest(settings);
-    const items = (manifest.items || []).map(item => {
-      const modifiedMs = parseInt(item.modifiedMs, 10) || 0;
-      const modifiedDate = modifiedMs ? new Date(modifiedMs) : (item.modifiedAt ? new Date(item.modifiedAt) : null);
-
-      return {
-        fileName: item.fileName,
-        modified: modifiedDate && !isNaN(modifiedDate.getTime())
-          ? modifiedDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
-          : '-',
-        modifiedMs: modifiedDate && !isNaN(modifiedDate.getTime()) ? modifiedDate.getTime() : 0,
-        size: parseInt(item.size, 10) || 0
-      };
-    }).filter(item => isSafeBackupFileName(item.fileName));
-
-    items.sort((a, b) => {
-      if (b.modifiedMs !== a.modifiedMs) return b.modifiedMs - a.modifiedMs;
-      return b.fileName.localeCompare(a.fileName);
-    });
-
-    return items;
-  }
-
   await ensureWebDavFolder(settings);
-
   const response = await fetch(getWebDavCollectionUrl(settings), {
     method: 'PROPFIND',
     headers: {
@@ -4498,9 +4836,7 @@ async function listWebDavBackups(settings) {
 
     let href = decodeXmlEntities(hrefMatch[1].trim());
     try { href = decodeURIComponent(href); } catch (e) {}
-    const remoteFileName = href.split('/').filter(Boolean).pop() || '';
-    const fileName = remoteFileName;
-
+    const fileName = href.split('/').filter(Boolean).pop() || '';
     if (!isSafeBackupFileName(fileName)) continue;
 
     const modifiedMatch = block.match(/<(?:[^:>]+:)?getlastmodified\b[^>]*>([\s\S]*?)<\/(?:[^:>]+:)?getlastmodified>/i);
@@ -4520,8 +4856,153 @@ async function listWebDavBackups(settings) {
     if (b.modifiedMs !== a.modifiedMs) return b.modifiedMs - a.modifiedMs;
     return b.fileName.localeCompare(a.fileName);
   });
-
   return items;
+}
+
+async function putWebDavBackup(settings, fileName, payload) {
+  await ensureWebDavFolder(settings);
+  const body = JSON.stringify(payload, null, 2);
+  const response = await fetch(getWebDavFileUrl(settings, fileName), {
+    method: 'PUT',
+    headers: {
+      'Authorization': webDavAuthHeader(settings),
+      'Content-Type': 'application/json; charset=utf-8'
+    },
+    body
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + response.status + '）');
+    }
+    throw new Error('上传 WebDAV 备份失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
+  }
+}
+
+async function getWebDavBackup(settings, fileName) {
+  const response = await fetch(getWebDavFileUrl(settings, fileName), {
+    headers: { 'Authorization': webDavAuthHeader(settings) }
+  });
+  if (!response.ok) throw new Error('下载备份失败（HTTP ' + response.status + '）');
+
+  let data;
+  try { data = await response.json(); } catch (e) { throw new Error('备份文件不是有效 JSON'); }
+  if (!data || data.format !== 'task-reminder-backup-v1') throw new Error('不是本系统支持的备份文件');
+  return data;
+}
+
+async function deleteWebDavBackupFile(settings, fileName) {
+  const response = await fetch(getWebDavFileUrl(settings, fileName), {
+    method: 'DELETE',
+    headers: { 'Authorization': webDavAuthHeader(settings) }
+  });
+  if (!(response.ok || response.status === 404)) {
+    throw new Error('删除远端备份失败（HTTP ' + response.status + '）');
+  }
+}
+
+async function testWebDavConnectionForWorker(settings) {
+  await ensureWebDavFolder(settings);
+  const physicalName = 'task-reminder_connection-test-' + Date.now() + '.txt';
+  const testUrl = getWebDavCollectionUrl(settings) + encodeURIComponent(physicalName);
+  const testBody = 'Task Reminder WebDAV connection test ' + new Date().toISOString();
+
+  const putResponse = await fetch(testUrl, {
+    method: 'PUT',
+    headers: {
+      'Authorization': webDavAuthHeader(settings),
+      'Content-Type': 'text/plain; charset=utf-8'
+    },
+    body: testBody
+  });
+  if (!putResponse.ok) {
+    const detail = await putResponse.text().catch(() => '');
+    if (putResponse.status === 401 || putResponse.status === 403) {
+      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + putResponse.status + '）');
+    }
+    throw new Error('WebDAV 写入测试失败（HTTP ' + putResponse.status + (detail ? '：' + detail.slice(0, 120) : '') + '）');
+  }
+
+  try {
+    const getResponse = await fetch(testUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': webDavAuthHeader(settings),
+        'Cache-Control': 'no-cache'
+      }
+    });
+    if (!getResponse.ok) throw new Error('WebDAV 读取测试失败（HTTP ' + getResponse.status + '）');
+    const returned = await getResponse.text();
+    if (returned !== testBody) throw new Error('WebDAV 读写校验失败：返回内容与测试内容不一致');
+  } finally {
+    await fetch(testUrl, {
+      method: 'DELETE',
+      headers: { 'Authorization': webDavAuthHeader(settings) }
+    }).catch(() => null);
+  }
+  return { message: 'WebDAV 连接正常，目录访问及读/写/删测试通过' };
+}
+
+async function listRemoteBackups(kv, config, settings) {
+  if (settings.provider === 'onedrive') {
+    validateOneDriveSettings(settings, true);
+    return listOneDriveBackups(kv, config);
+  }
+  validateWebDavSettings(settings);
+  return listWebDavBackups(settings);
+}
+
+async function putRemoteBackup(kv, config, settings, fileName, payload) {
+  if (settings.provider === 'onedrive') {
+    validateOneDriveSettings(settings, true);
+    return putOneDriveBackup(kv, config, fileName, payload);
+  }
+  validateWebDavSettings(settings);
+  return putWebDavBackup(settings, fileName, payload);
+}
+
+async function getRemoteBackup(kv, config, settings, fileName) {
+  if (settings.provider === 'onedrive') {
+    validateOneDriveSettings(settings, true);
+    return getOneDriveBackup(kv, config, fileName);
+  }
+  validateWebDavSettings(settings);
+  return getWebDavBackup(settings, fileName);
+}
+
+async function deleteRemoteBackupFile(kv, config, settings, fileName) {
+  if (settings.provider === 'onedrive') {
+    validateOneDriveSettings(settings, true);
+    return deleteOneDriveBackupFile(kv, config, fileName);
+  }
+  validateWebDavSettings(settings);
+  return deleteWebDavBackupFile(settings, fileName);
+}
+
+async function testRemoteBackupConnection(kv, config, settings) {
+  if (settings.provider === 'onedrive') {
+    validateOneDriveSettings(settings, true);
+    return testOneDriveConnection(kv, config);
+  }
+  validateWebDavSettings(settings);
+  return testWebDavConnectionForWorker(settings);
+}
+
+async function trimRemoteBackups(kv, config, settings, maxCount) {
+  const items = await listRemoteBackups(kv, config, settings);
+  const keep = Math.max(1, parseInt(maxCount) || 20);
+  if (items.length <= keep) return 0;
+
+  const oldItems = items.slice(keep);
+  let deleted = 0;
+  for (const item of oldItems) {
+    try {
+      await deleteRemoteBackupFile(kv, config, settings, item.fileName);
+      deleted++;
+    } catch (e) {}
+  }
+  return deleted;
 }
 
 function buildBackupFileName(scope) {
@@ -4548,8 +5029,12 @@ async function buildBackupPayload(kv, scope) {
     const cfg = raw ? JSON.parse(raw) : {};
     const configCopy = { ...cfg };
 
-    // WebDAV 自身密码不写进远端备份，避免备份凭据自我泄露；推送 API Key 会正常备份。
+    // 远端备份连接凭据不写入远端备份，避免凭据自我泄露；推送 API Key 仍正常备份。
     delete configCopy.webdavPassword;
+    delete configCopy.onedriveClientSecret;
+    delete configCopy.onedriveRefreshToken;
+    delete configCopy.onedriveAccessToken;
+    delete configCopy.onedriveAccessTokenExpiresAt;
     delete configCopy.jwtSecret;
     payload.config = configCopy;
   }
@@ -4574,146 +5059,13 @@ async function buildBackupPayload(kv, scope) {
   return payload;
 }
 
-async function putWebDavBackup(settings, fileName, payload) {
-  await ensureWebDavFolder(settings);
-  const body = JSON.stringify(payload, null, 2);
-  const response = await fetch(getWebDavFileUrl(settings, fileName), {
-    method: 'PUT',
-    headers: {
-      'Authorization': webDavAuthHeader(settings),
-      'Content-Type': 'application/json; charset=utf-8'
-    },
-    body
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + response.status + '）');
-    }
-    throw new Error('上传 WebDAV 备份失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
-  }
-
-  if (settings.provider === 'nutstore') {
-    const now = Date.now();
-    await upsertNutstoreManifestEntry(settings, {
-      fileName,
-      modifiedAt: new Date(now).toISOString(),
-      modifiedMs: now,
-      size: new TextEncoder().encode(body).length
-    });
-  }
-}
-
-async function getWebDavBackup(settings, fileName) {
-  const response = await fetch(getWebDavFileUrl(settings, fileName), {
-    headers: {
-      'Authorization': webDavAuthHeader(settings)
-    }
-  });
-
-  if (!response.ok) throw new Error('下载备份失败（HTTP ' + response.status + '）');
-
-  let data;
-  try { data = await response.json(); } catch (e) { throw new Error('备份文件不是有效 JSON'); }
-  if (!data || data.format !== 'task-reminder-backup-v1') throw new Error('不是本系统支持的备份文件');
-  return data;
-}
-
-async function deleteWebDavBackupFile(settings, fileName) {
-  const response = await fetch(getWebDavFileUrl(settings, fileName), {
-    method: 'DELETE',
-    headers: {
-      'Authorization': webDavAuthHeader(settings)
-    }
-  });
-
-  if (!(response.ok || response.status === 404)) {
-    throw new Error('删除远端备份失败（HTTP ' + response.status + '）');
-  }
-
-  if (settings.provider === 'nutstore') {
-    await removeNutstoreManifestEntry(settings, fileName);
-  }
-}
-
-async function testWebDavConnectionForWorker(settings) {
-  if (settings.provider !== 'nutstore') {
-    await ensureWebDavFolder(settings);
-  }
-
-  const physicalName = settings.provider === 'nutstore'
-    ? getNutstoreBackupPrefix(settings) + 'connection-test-' + Date.now() + '.txt'
-    : 'task-reminder_connection-test-' + Date.now() + '.txt';
-  const testUrl = getWebDavCollectionUrl(settings) + encodeURIComponent(physicalName);
-  const testBody = 'Task Reminder WebDAV connection test ' + new Date().toISOString();
-
-  const putResponse = await fetch(testUrl, {
-    method: 'PUT',
-    headers: {
-      'Authorization': webDavAuthHeader(settings),
-      'Content-Type': 'text/plain; charset=utf-8'
-    },
-    body: testBody
-  });
-
-  if (!putResponse.ok) {
-    const detail = await putResponse.text().catch(() => '');
-    if (putResponse.status === 401 || putResponse.status === 403) {
-      throw new Error('WebDAV 认证失败，请检查用户名和应用密码（HTTP ' + putResponse.status + '）');
-    }
-    throw new Error('WebDAV 写入测试失败（HTTP ' + putResponse.status + (detail ? '：' + detail.slice(0, 120) : '') + '）');
-  }
-
-  try {
-    const getResponse = await fetch(testUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': webDavAuthHeader(settings),
-        'Cache-Control': 'no-cache'
-      }
-    });
-
-    if (!getResponse.ok) {
-      throw new Error('WebDAV 读取测试失败（HTTP ' + getResponse.status + '）');
-    }
-
-    const returned = await getResponse.text();
-    if (returned !== testBody) {
-      throw new Error('WebDAV 读写校验失败：返回内容与测试内容不一致');
-    }
-  } finally {
-    await fetch(testUrl, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': webDavAuthHeader(settings)
-      }
-    }).catch(() => null);
-  }
-
-  return {
-    message: settings.provider === 'nutstore'
-      ? '坚果云 WebDAV 连接正常，读/写/删测试通过'
-      : 'WebDAV 连接正常，目录访问及读/写/删测试通过'
-  };
-}
-
-async function trimWebDavBackups(settings, maxCount) {
-  const items = await listWebDavBackups(settings);
-  const keep = Math.max(1, parseInt(maxCount) || 20);
-  if (items.length <= keep) return 0;
-
-  const oldItems = items.slice(keep);
-  let deleted = 0;
-
-  for (const item of oldItems) {
-    try {
-      await deleteWebDavBackupFile(settings, item.fileName);
-      deleted++;
-    } catch (e) {}
-  }
-
-  return deleted;
+function escapeHtmlServer(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
@@ -4729,12 +5081,20 @@ async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
     const currentRaw = await kv.get('config');
     const current = currentRaw ? JSON.parse(currentRaw) : {};
     const preserved = {
+      backupProvider: current.backupProvider,
+      backupScope: current.backupScope,
       webdavProvider: current.webdavProvider,
       webdavUrl: current.webdavUrl,
       webdavFolder: current.webdavFolder,
       webdavUsername: current.webdavUsername,
       webdavPassword: current.webdavPassword,
       webdavBackupScope: current.webdavBackupScope,
+      onedriveTenant: current.onedriveTenant,
+      onedriveClientId: current.onedriveClientId,
+      onedriveClientSecret: current.onedriveClientSecret,
+      onedriveRefreshToken: current.onedriveRefreshToken,
+      onedriveAccessToken: current.onedriveAccessToken,
+      onedriveAccessTokenExpiresAt: current.onedriveAccessTokenExpiresAt,
       jwtSecret: current.jwtSecret
     };
 
@@ -4778,7 +5138,7 @@ async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
       if (isPast && expiredPolicy === 'push') {
         const title = '☁️ 备份恢复提醒：' + task.name;
         const content =
-          '📋 "' + task.name + '" 已从 WebDAV 备份恢复，并按你的选择立即推送一次。\n' +
+          '📋 "' + task.name + '" 已从远端备份恢复，并按你的选择立即推送一次。\n' +
           '📅 原提醒日：' + task.nextReminder + ' ' + (task.remindTime || '08:00') + '\n' +
           '📝 备注：' + (task.remark || '无');
         const result = await sendNotification(pushConfig, title, content, task);
@@ -4796,7 +5156,7 @@ async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
         if (result.success) {
           pushedExpired++;
           if (task.mode === 'countdown') {
-            await markSingleTaskCompleted(kv, task, '从 WebDAV 备份恢复后立即推送成功，单次提醒已标记完成。');
+            await markSingleTaskCompleted(kv, task, '从远端备份恢复后立即推送成功，单次提醒已标记完成。');
           }
         }
       }
