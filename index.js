@@ -393,7 +393,7 @@ function getDashboardPage() {
       <button class="btn-primary" onclick="openAddModal()">➕ 新建</button>
       <button class="btn-config" onclick="openConfigModal()">🛠️ 配置</button>
       <button class="btn-history" onclick="viewPushLogs()">📨 推送日志</button>
-      <button class="btn-backup" onclick="openBackupModal()">☁️ 备份</button>
+      <button class="btn-backup" onclick="openBackupModal()">💾 备份与恢复</button>
       <button class="btn-trash" onclick="viewTrash()">♻️ 回收站</button>
       <button class="btn-danger" onclick="logout()">🚪 退出</button>
     </div>
@@ -557,7 +557,7 @@ function getDashboardPage() {
 <!-- 远端备份弹窗 -->
 <div class="modal" id="backupModal">
   <div class="modal-content">
-    <h2>☁️ 远端备份</h2>
+    <h2>💾 备份与恢复</h2>
     <div class="mode-hint" style="margin-bottom:14px;">支持 OneDrive 与通用 WebDAV（Nextcloud、群晖等）。远端最多保留最近 20 份，超过后自动删除最早备份。</div>
 
     <label>备份位置</label>
@@ -597,15 +597,31 @@ function getDashboardPage() {
       </div>
     </div>
 
-    <label>备份内容</label>
+    <label>手动备份内容</label>
     <select id="backupScope">
-      <option value="both">配置 / Key + 所有任务</option>
-      <option value="config">仅配置 / Key</option>
-      <option value="tasks">仅所有任务</option>
+      <option value="both">全部备份（任务 + 配置 + Key）</option>
+      <option value="config">仅配置 + Key</option>
+      <option value="tasks">仅任务数据</option>
     </select>
-    <div class="mode-hint" style="margin-top:-8px;margin-bottom:12px;">“所有任务”包含正常任务、回收站任务和续订历史；不备份 done/retry/autorenew 等临时推送状态，避免恢复后误判。</div>
+    <div class="mode-hint" style="margin-top:-8px;margin-bottom:12px;">任务数据包含正常任务、回收站和续订历史；Key 包含已启用推送渠道及对应 Token / API Key。远端备份连接凭据和 done/retry/autorenew 临时状态不会写入备份。</div>
 
-    <label>恢复备份时，已过期且未完成任务如何处理</label>
+    <div style="margin:8px 0 14px 0;padding:12px;border:1px solid #e9ecef;border-radius:10px;background:#fafbfc;">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px;">
+        <input type="checkbox" id="backupAutoEnabled" style="width:auto;margin:0;" checked> 自动备份
+      </label>
+      <div class="mode-hint" style="margin:0;">新建、修改、删除、恢复任务，手动续订，以及系统/推送设置保存后自动触发；短时间连续操作会合并为一次，自动备份固定包含任务 + 配置 + Key。</div>
+      <div class="mode-hint" id="backupAutoStatus" style="margin-top:6px;">最近自动备份：暂无</div>
+    </div>
+
+    <label>恢复内容</label>
+    <div class="config-checkbox-group" style="margin-bottom:12px;">
+      <label><input type="checkbox" id="restoreTasks" checked> 任务数据</label>
+      <label><input type="checkbox" id="restoreConfig" checked> 系统配置</label>
+      <label><input type="checkbox" id="restoreKeys" checked> 推送 Key</label>
+    </div>
+    <div class="mode-hint" style="margin-top:-6px;margin-bottom:12px;">任务数据 = 正常任务 + 回收站 + 续订历史；系统配置 = 登录账号、检测间隔等；推送 Key = 推送渠道选择及对应 Token / API Key。可单独或组合恢复。</div>
+
+    <label>恢复任务时，已过期且未完成任务如何处理</label>
     <select id="backupExpiredPolicy">
       <option value="expired">恢复为已过期，不补发（推荐）</option>
       <option value="push">恢复后立即推送一次，再保持已过期状态</option>
@@ -2238,6 +2254,15 @@ async function openBackupModal() {
       const settings = data.settings || {};
       document.getElementById('backupProvider').value = settings.provider || 'onedrive';
       document.getElementById('backupScope').value = settings.scope || 'both';
+      document.getElementById('backupAutoEnabled').checked = settings.autoEnabled !== false;
+      const autoStatus = document.getElementById('backupAutoStatus');
+      if (autoStatus) {
+        if (settings.autoLastAt) {
+          autoStatus.textContent = '最近自动备份：' + formatFullDate(settings.autoLastAt) + (settings.autoLastError ? '（失败：' + settings.autoLastError + '）' : '（成功）');
+        } else {
+          autoStatus.textContent = '最近自动备份：暂无';
+        }
+      }
 
       document.getElementById('onedriveTenant').value = settings.tenant || 'common';
       document.getElementById('onedriveClientId').value = settings.clientId || '';
@@ -2268,6 +2293,7 @@ function getBackupSettingsFromForm() {
   return {
     provider: document.getElementById('backupProvider').value || 'onedrive',
     scope: document.getElementById('backupScope').value || 'both',
+    autoEnabled: document.getElementById('backupAutoEnabled').checked,
     tenant: document.getElementById('onedriveTenant').value.trim() || 'common',
     clientId: document.getElementById('onedriveClientId').value.trim(),
     clientSecret: document.getElementById('onedriveClientSecret').value.trim(),
@@ -2465,25 +2491,45 @@ async function loadRemoteBackups() {
 async function restoreRemoteBackup(encodedFileName) {
   const fileName = decodeURIComponent(encodedFileName);
   const expiredPolicy = document.getElementById('backupExpiredPolicy').value || 'expired';
-  const policyText = expiredPolicy === 'push'
-    ? '已过期任务会立即推送一次，然后保持已过期状态。'
-    : '已过期任务会恢复为已过期状态，不补发。';
+  const restoreSections = {
+    tasks: !!document.getElementById('restoreTasks').checked,
+    config: !!document.getElementById('restoreConfig').checked,
+    keys: !!document.getElementById('restoreKeys').checked
+  };
 
-  if (!confirm('确认恢复备份“' + fileName + '”？\\n当前采用合并恢复：同 ID 数据会覆盖，其他现有任务不会删除。\\n' + policyText)) return;
+  if (!restoreSections.tasks && !restoreSections.config && !restoreSections.keys) {
+    showToast('请至少选择一项恢复内容', 'error');
+    return;
+  }
+
+  const selected = [];
+  if (restoreSections.tasks) selected.push('任务数据');
+  if (restoreSections.config) selected.push('系统配置');
+  if (restoreSections.keys) selected.push('推送 Key');
+
+  const policyText = restoreSections.tasks
+    ? (expiredPolicy === 'push'
+      ? '已过期任务会立即推送一次，然后保持已过期状态。'
+      : '已过期任务会恢复为已过期状态，不补发。')
+    : '本次不恢复任务数据。';
+
+  if (!confirm('确认恢复备份“' + fileName + '”？\\n恢复内容：' + selected.join('、') + '\\n当前采用合并恢复：同 ID 数据会覆盖，未选择的类别和其他现有任务不会删除。\\n' + policyText)) return;
 
   try {
     const resp = await fetch('/api/backups/restore', {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ fileName, expiredPolicy })
+      body: JSON.stringify({ fileName, expiredPolicy, restoreSections })
     });
     const data = await resp.json();
 
     if (data.success) {
-      let msg = '恢复完成：任务 ' + (data.restoredTasks || 0) + '，回收站 ' + (data.restoredTrash || 0);
-      if (data.restoredConfig) msg += '，配置已恢复';
-      if (data.pushedExpired) msg += '，立即推送 ' + data.pushedExpired + ' 条';
-      showToast(msg);
+      const parts = [];
+      if (restoreSections.tasks) parts.push('任务 ' + (data.restoredTasks || 0) + '，回收站 ' + (data.restoredTrash || 0));
+      if (data.restoredConfig) parts.push('系统配置');
+      if (data.restoredKeys) parts.push('推送 Key');
+      if (data.pushedExpired) parts.push('立即推送 ' + data.pushedExpired + ' 条');
+      showToast('恢复完成：' + (parts.join('，') || '无可恢复内容'));
       await loadTasks();
     } else {
       showToast(data.message || '恢复失败', 'error');
@@ -3274,7 +3320,7 @@ async function ensureDueReminderCanFinish(kv, config, task, dueNotifyKey) {
 // Cloudflare Worker 入口
 // ============================================================
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -3378,6 +3424,7 @@ export default {
         const tokenData = await exchangeOneDriveAuthorizationCode(settings, code, redirectUri);
         await verifyOneDriveToken(tokenData.access_token);
         await saveOneDriveTokens(kv, tokenData);
+        queueAutoBackup(ctx, kv, '连接 OneDrive');
         return htmlResponse(true, '授权成功，备份将保存到 OneDrive 根目录的 TaskReminderBackup 文件夹。');
       } catch (e) {
         return htmlResponse(false, e.message || 'OneDrive 授权失败');
@@ -3487,6 +3534,7 @@ export default {
 
       await kv.put('task_' + task.id, JSON.stringify(task));
       await kv.put('history_' + task.id, JSON.stringify([]));
+      queueAutoBackup(ctx, kv, '新建任务');
 
       return new Response(JSON.stringify({
         success: true,
@@ -3550,6 +3598,7 @@ export default {
       }
 
       await kv.put('task_' + id, JSON.stringify(task));
+      queueAutoBackup(ctx, kv, '修改任务');
 
       return new Response(JSON.stringify({
         success: true,
@@ -3571,6 +3620,7 @@ export default {
 
       await kv.put('trash_' + id, JSON.stringify(task));
       await kv.delete('task_' + id);
+      queueAutoBackup(ctx, kv, '删除任务');
 
       return new Response(JSON.stringify({
         success: true
@@ -3648,6 +3698,8 @@ export default {
         }
       }
 
+      queueAutoBackup(ctx, kv, '恢复任务');
+
       return new Response(JSON.stringify({
         success: true,
         task,
@@ -3666,6 +3718,7 @@ export default {
       if (!raw) return errorResponse('回收站中不存在该任务', 404);
 
       await permanentlyDeleteTaskData(kv, id);
+      queueAutoBackup(ctx, kv, '永久删除任务');
 
       return new Response(JSON.stringify({
         success: true
@@ -3680,6 +3733,7 @@ export default {
       for (const item of items) {
         if (item && item.id) await permanentlyDeleteTaskData(kv, item.id);
       }
+      queueAutoBackup(ctx, kv, '清空回收站');
 
       return new Response(JSON.stringify({
         success: true,
@@ -3777,6 +3831,7 @@ export default {
       if (history.length > 21) history = history.slice(-21);
 
       await kv.put('history_' + id, JSON.stringify(history));
+      queueAutoBackup(ctx, kv, '手动续订');
 
       return new Response(JSON.stringify({
         success: true,
@@ -3883,6 +3938,7 @@ export default {
       try {
         const body = await request.json();
         const result = await saveBackupSettingsToConfig(kv, body);
+        queueAutoBackup(ctx, kv, '修改备份设置');
 
         return new Response(JSON.stringify({
           success: true,
@@ -4006,14 +4062,20 @@ export default {
         const body = await request.json();
         const fileName = String(body.fileName || '').trim();
         const expiredPolicy = body.expiredPolicy === 'push' ? 'push' : 'expired';
+        const restoreSections = {
+          tasks: body.restoreSections ? body.restoreSections.tasks !== false : true,
+          config: body.restoreSections ? body.restoreSections.config !== false : true,
+          keys: body.restoreSections ? body.restoreSections.keys !== false : true
+        };
 
+        if (!restoreSections.tasks && !restoreSections.config && !restoreSections.keys) return errorResponse('请至少选择一项恢复内容', 400);
         if (!isSafeBackupFileName(fileName)) return errorResponse('备份文件名无效', 400);
 
         const latestRaw = await kv.get('config');
         const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
         const settings = getBackupSettingsFromConfig(latestConfig);
         const backup = await getRemoteBackup(kv, latestConfig, settings, fileName);
-        const result = await restoreBackupPayload(kv, config, backup, expiredPolicy);
+        const result = await restoreBackupPayload(kv, config, backup, expiredPolicy, restoreSections);
 
         return new Response(JSON.stringify({
           success: true,
@@ -4077,6 +4139,7 @@ export default {
       };
 
       await kv.put('config', JSON.stringify(newConfig));
+      queueAutoBackup(ctx, kv, '修改系统或推送设置');
 
       return new Response(JSON.stringify({
         success: true
@@ -4421,6 +4484,9 @@ function normalizeBackupSettings(input) {
   return {
     provider: normalizeBackupProvider(input.provider),
     scope: ['config', 'tasks', 'both'].includes(input.scope) ? input.scope : 'both',
+    autoEnabled: input.autoEnabled !== false,
+    autoLastAt: String(input.autoLastAt || ''),
+    autoLastError: String(input.autoLastError || ''),
     tenant: String(input.tenant || 'common').trim() || 'common',
     clientId: String(input.clientId || '').trim(),
     clientSecret: String(input.clientSecret || '').trim(),
@@ -4439,6 +4505,9 @@ function getBackupSettingsFromConfig(config) {
   return normalizeBackupSettings({
     provider: legacyProvider,
     scope: config.backupScope || config.webdavBackupScope || 'both',
+    autoEnabled: config.backupAutoEnabled !== false,
+    autoLastAt: config.backupAutoLastAt || '',
+    autoLastError: config.backupAutoLastError || '',
     tenant: config.onedriveTenant || 'common',
     clientId: config.onedriveClientId,
     clientSecret: config.onedriveClientSecret,
@@ -4456,6 +4525,9 @@ function publicBackupSettings(settings) {
   return {
     provider: settings.provider,
     scope: settings.scope,
+    autoEnabled: settings.autoEnabled !== false,
+    autoLastAt: settings.autoLastAt || '',
+    autoLastError: settings.autoLastError || '',
     tenant: settings.tenant,
     clientId: settings.clientId,
     clientSecret: settings.clientSecret,
@@ -4482,6 +4554,7 @@ async function saveBackupSettingsToConfig(kv, input) {
   existing.backupProvider = next.provider;
   existing.backupScope = next.scope;
   existing.webdavBackupScope = next.scope;
+  existing.backupAutoEnabled = next.autoEnabled !== false;
 
   if (next.provider === 'onedrive') {
     const identityChanged = previous.clientId !== next.clientId || previous.tenant !== next.tenant;
@@ -4739,7 +4812,7 @@ async function getOneDriveBackup(kv, config, fileName) {
 
   let data;
   try { data = await response.json(); } catch (e) { throw new Error('OneDrive 备份文件不是有效 JSON'); }
-  if (!data || data.format !== 'task-reminder-backup-v1') throw new Error('不是本系统支持的备份文件');
+  if (!data || !['task-reminder-backup-v1', 'task-reminder-backup-v2'].includes(data.format)) throw new Error('不是本系统支持的备份文件');
   return data;
 }
 
@@ -4943,7 +5016,7 @@ async function getWebDavBackup(settings, fileName) {
 
   let data;
   try { data = await response.json(); } catch (e) { throw new Error('备份文件不是有效 JSON'); }
-  if (!data || data.format !== 'task-reminder-backup-v1') throw new Error('不是本系统支持的备份文件');
+  if (!data || !['task-reminder-backup-v1', 'task-reminder-backup-v2'].includes(data.format)) throw new Error('不是本系统支持的备份文件');
   return data;
 }
 
@@ -5072,26 +5145,95 @@ function buildBackupFileName(scope) {
   return 'task-reminder_backup_' + scope + '_' + stamp + '.json';
 }
 
-async function buildBackupPayload(kv, scope) {
+const BACKUP_KEY_FIELDS = [
+  'notifierTypes',
+  'serverchanKey',
+  'pushplusToken',
+  'tgBotToken',
+  'tgChatId',
+  'emailFrom',
+  'emailTo',
+  'emailApiKey',
+  'brevoFrom',
+  'brevoFromName',
+  'brevoTo',
+  'brevoApiKey',
+  'notifyxApiKey'
+];
+
+const BACKUP_CONNECTION_FIELDS = [
+  'backupProvider',
+  'backupScope',
+  'webdavProvider',
+  'webdavUrl',
+  'webdavFolder',
+  'webdavUsername',
+  'webdavPassword',
+  'webdavBackupScope',
+  'onedriveTenant',
+  'onedriveClientId',
+  'onedriveClientSecret',
+  'onedriveRefreshToken',
+  'onedriveAccessToken',
+  'onedriveAccessTokenExpiresAt',
+  'jwtSecret',
+  'backupAutoLastAt',
+  'backupAutoLastError'
+];
+
+function splitConfigForBackup(rawConfig) {
+  const cfg = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+  const systemConfig = {};
+  const keys = {};
+
+  for (const [key, value] of Object.entries(cfg)) {
+    if (BACKUP_CONNECTION_FIELDS.includes(key)) continue;
+    if (BACKUP_KEY_FIELDS.includes(key)) keys[key] = value;
+    else systemConfig[key] = value;
+  }
+
+  return { systemConfig, keys };
+}
+
+function normalizeBackupSectionsForRestore(backup) {
+  const result = {
+    config: {},
+    keys: {},
+    tasks: Array.isArray(backup && backup.tasks) ? backup.tasks : [],
+    trash: Array.isArray(backup && backup.trash) ? backup.trash : [],
+    histories: backup && backup.histories && typeof backup.histories === 'object' ? backup.histories : {}
+  };
+
+  if (backup && backup.format === 'task-reminder-backup-v2') {
+    result.config = backup.config && typeof backup.config === 'object' ? backup.config : {};
+    result.keys = backup.keys && typeof backup.keys === 'object' ? backup.keys : {};
+    return result;
+  }
+
+  // 兼容旧版 v1：原来的配置和推送 Key 混在 backup.config 中。
+  const legacy = backup && backup.config && typeof backup.config === 'object' ? backup.config : {};
+  const split = splitConfigForBackup(legacy);
+  result.config = split.systemConfig;
+  result.keys = split.keys;
+  return result;
+}
+
+async function buildBackupPayload(kv, scope, options = {}) {
   const payload = {
-    format: 'task-reminder-backup-v1',
+    format: 'task-reminder-backup-v2',
+    version: 2,
     exportedAt: new Date().toISOString(),
-    scope
+    scope,
+    backupType: options.backupType || 'manual',
+    reason: options.reason || ''
   };
 
   if (scope === 'config' || scope === 'both') {
     const raw = await kv.get('config');
     const cfg = raw ? JSON.parse(raw) : {};
-    const configCopy = { ...cfg };
-
-    // 远端备份连接凭据不写入远端备份，避免凭据自我泄露；推送 API Key 仍正常备份。
-    delete configCopy.webdavPassword;
-    delete configCopy.onedriveClientSecret;
-    delete configCopy.onedriveRefreshToken;
-    delete configCopy.onedriveAccessToken;
-    delete configCopy.onedriveAccessTokenExpiresAt;
-    delete configCopy.jwtSecret;
-    payload.config = configCopy;
+    const split = splitConfigForBackup(cfg);
+    payload.config = split.systemConfig;
+    payload.keys = split.keys;
   }
 
   if (scope === 'tasks' || scope === 'both') {
@@ -5123,8 +5265,14 @@ function escapeHtmlServer(value) {
     .replace(/'/g, '&#39;');
 }
 
-async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
+async function restoreBackupPayload(kv, config, backup, expiredPolicy, restoreSections = {}) {
+  const sections = normalizeBackupSectionsForRestore(backup || {});
+  const restoreTasks = restoreSections.tasks !== false;
+  const restoreConfig = restoreSections.config !== false;
+  const restoreKeys = restoreSections.keys !== false;
+
   let restoredConfig = false;
+  let restoredKeys = false;
   let restoredTasks = 0;
   let restoredTrash = 0;
   let pushedExpired = 0;
@@ -5132,41 +5280,35 @@ async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
   const nowMs = Date.now();
   const restoredAt = new Date(nowMs).toISOString();
 
-  if (backup.config && typeof backup.config === 'object') {
+  if (restoreConfig || restoreKeys) {
     const currentRaw = await kv.get('config');
     const current = currentRaw ? JSON.parse(currentRaw) : {};
-    const preserved = {
-      backupProvider: current.backupProvider,
-      backupScope: current.backupScope,
-      webdavProvider: current.webdavProvider,
-      webdavUrl: current.webdavUrl,
-      webdavFolder: current.webdavFolder,
-      webdavUsername: current.webdavUsername,
-      webdavPassword: current.webdavPassword,
-      webdavBackupScope: current.webdavBackupScope,
-      onedriveTenant: current.onedriveTenant,
-      onedriveClientId: current.onedriveClientId,
-      onedriveClientSecret: current.onedriveClientSecret,
-      onedriveRefreshToken: current.onedriveRefreshToken,
-      onedriveAccessToken: current.onedriveAccessToken,
-      onedriveAccessTokenExpiresAt: current.onedriveAccessTokenExpiresAt,
-      jwtSecret: current.jwtSecret
-    };
+    const merged = { ...current };
 
-    const merged = { ...current, ...backup.config };
-    for (const [key, value] of Object.entries(preserved)) {
-      if (value !== undefined) merged[key] = value;
+    if (restoreConfig && sections.config && typeof sections.config === 'object') {
+      Object.assign(merged, sections.config);
+      restoredConfig = Object.keys(sections.config).length > 0;
+    }
+
+    if (restoreKeys && sections.keys && typeof sections.keys === 'object') {
+      Object.assign(merged, sections.keys);
+      restoredKeys = Object.keys(sections.keys).length > 0;
+    }
+
+    // 远端连接、OAuth Token 与当前自动备份运行状态始终保留当前值，避免恢复后断开备份连接。
+    for (const key of BACKUP_CONNECTION_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(current, key)) merged[key] = current[key];
+      else delete merged[key];
     }
 
     await kv.put('config', JSON.stringify(merged));
     pushConfig = { ...pushConfig, ...merged };
-    restoredConfig = true;
   }
 
-  const histories = backup.histories && typeof backup.histories === 'object' ? backup.histories : {};
+  const histories = sections.histories || {};
 
-  if (Array.isArray(backup.tasks)) {
-    for (const source of backup.tasks) {
+  if (restoreTasks && Array.isArray(sections.tasks)) {
+    for (const source of sections.tasks) {
       if (!source || !source.id) continue;
       const task = JSON.parse(JSON.stringify(source));
       delete task.deletedAt;
@@ -5218,8 +5360,8 @@ async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
     }
   }
 
-  if (Array.isArray(backup.trash)) {
-    for (const source of backup.trash) {
+  if (restoreTasks && Array.isArray(sections.trash)) {
+    for (const source of sections.trash) {
       if (!source || !source.id) continue;
       const task = JSON.parse(JSON.stringify(source));
       if (!task.deletedAt) task.deletedAt = restoredAt;
@@ -5237,10 +5379,80 @@ async function restoreBackupPayload(kv, config, backup, expiredPolicy) {
 
   return {
     restoredConfig,
+    restoredKeys,
     restoredTasks,
     restoredTrash,
     pushedExpired
   };
+}
+
+const AUTO_BACKUP_PENDING_KEY = 'backup_auto_pending';
+const AUTO_BACKUP_DELAY_MS = 10000;
+
+function queueAutoBackup(ctx, kv, reason) {
+  const job = scheduleAutoBackup(kv, reason).catch(() => null);
+  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(job);
+}
+
+async function updateAutoBackupStatus(kv, success, errorMessage) {
+  try {
+    const raw = await kv.get('config');
+    const cfg = raw ? JSON.parse(raw) : {};
+    cfg.backupAutoLastAt = new Date().toISOString();
+    cfg.backupAutoLastError = success ? '' : String(errorMessage || '自动备份失败').slice(0, 180);
+    await kv.put('config', JSON.stringify(cfg));
+  } catch (e) {}
+}
+
+async function scheduleAutoBackup(kv, reason) {
+  const configRaw = await kv.get('config');
+  const config = configRaw ? JSON.parse(configRaw) : {};
+  const settings = getBackupSettingsFromConfig(config);
+
+  if (settings.autoEnabled === false) return;
+  if (settings.provider === 'onedrive' && !settings.refreshToken) return;
+  if (settings.provider === 'custom' && (!settings.url || !settings.username || !settings.password)) return;
+
+  const token = crypto.randomUUID();
+  await kv.put(AUTO_BACKUP_PENDING_KEY, JSON.stringify({
+    token,
+    reason: String(reason || ''),
+    requestedAt: new Date().toISOString()
+  }), { expirationTtl: 5 * 60 });
+
+  await new Promise(resolve => setTimeout(resolve, AUTO_BACKUP_DELAY_MS));
+
+  const pendingRaw = await kv.get(AUTO_BACKUP_PENDING_KEY);
+  if (!pendingRaw) return;
+  let pending = {};
+  try { pending = JSON.parse(pendingRaw); } catch (e) {}
+  if (pending.token !== token) return;
+
+  try {
+    const latestRaw = await kv.get('config');
+    const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
+    const latestSettings = getBackupSettingsFromConfig(latestConfig);
+    if (latestSettings.autoEnabled === false) return;
+
+    const payload = await buildBackupPayload(kv, 'both', {
+      backupType: 'auto',
+      reason: pending.reason || reason || ''
+    });
+    const fileName = buildBackupFileName('both');
+    await putRemoteBackup(kv, latestConfig, latestSettings, fileName, payload);
+    await trimRemoteBackups(kv, latestConfig, latestSettings, 20);
+    await updateAutoBackupStatus(kv, true, '');
+  } catch (e) {
+    await updateAutoBackupStatus(kv, false, e && e.message ? e.message : String(e || '自动备份失败'));
+  } finally {
+    const latestPending = await kv.get(AUTO_BACKUP_PENDING_KEY);
+    if (latestPending) {
+      try {
+        const parsed = JSON.parse(latestPending);
+        if (parsed.token === token) await kv.delete(AUTO_BACKUP_PENDING_KEY);
+      } catch (e) {}
+    }
+  }
 }
 
 async function getAllTasks(kv) {
