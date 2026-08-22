@@ -928,6 +928,7 @@ const API_BASE = '';
 let token = localStorage.getItem('token') || '';
 let reminderGroupCounter = 0;
 let checkInterval = 5;
+let notifierConfigCache = {};
 
 function getHeaders() {
   return {
@@ -2877,6 +2878,21 @@ async function openConfigModal() {
   document.getElementById('cfgPassword').value = data.password || '';
   document.getElementById('cfgInterval').value = data.checkInterval || 5;
 
+  notifierConfigCache = {
+    serverchanKey: data.serverchanKey || '',
+    pushplusToken: data.pushplusToken || '',
+    tgBotToken: data.tgBotToken || '',
+    tgChatId: data.tgChatId || '',
+    emailFrom: data.emailFrom || '',
+    emailTo: data.emailTo || '',
+    emailApiKey: data.emailApiKey || '',
+    brevoFrom: data.brevoFrom || '',
+    brevoFromName: data.brevoFromName || '',
+    brevoTo: data.brevoTo || '',
+    brevoApiKey: data.brevoApiKey || '',
+    notifyxApiKey: data.notifyxApiKey || ''
+  };
+
   const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]');
   const selected = data.notifierTypes || [];
 
@@ -2884,11 +2900,18 @@ async function openConfigModal() {
     cb.checked = selected.includes(cb.value);
   });
 
-  renderNotifierFields(selected, data);
+  renderNotifierFields(selected);
   openModal('configModal');
 }
 
-function renderNotifierFields(selectedTypes, data) {
+function syncNotifierConfigCacheFromDOM() {
+  document.querySelectorAll('#notifierConfigFields input').forEach(el => {
+    const key = el.id.replace('cfg_', '');
+    notifierConfigCache[key] = el.value;
+  });
+}
+
+function renderNotifierFields(selectedTypes) {
   const container = document.getElementById('notifierConfigFields');
 
   const allFields = {
@@ -2921,7 +2944,7 @@ function renderNotifierFields(selectedTypes, data) {
       html += '<div class="config-detail"><strong>' + type + '</strong>';
 
       fields.forEach(f => {
-        const val = data[f.key] || '';
+        const val = notifierConfigCache[f.key] || '';
         html += '<label>' + f.label + '</label><input type="text" id="cfg_' + f.key + '" value="' + val + '">';
       });
 
@@ -2932,18 +2955,21 @@ function renderNotifierFields(selectedTypes, data) {
   container.innerHTML = html;
 }
 
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.closest && e.target.closest('#notifierConfigFields')) {
+    const key = e.target.id ? e.target.id.replace('cfg_', '') : '';
+    if (key) notifierConfigCache[key] = e.target.value;
+  }
+});
+
 document.addEventListener('change', function(e) {
   if (e.target.closest && e.target.closest('#notifierCheckboxes')) {
+    syncNotifierConfigCacheFromDOM();
+
     const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked');
     const selected = Array.from(checkboxes).map(cb => cb.value);
-    const data = {};
 
-    document.querySelectorAll('#notifierConfigFields input').forEach(el => {
-      const key = el.id.replace('cfg_', '');
-      data[key] = el.value;
-    });
-
-    renderNotifierFields(selected, data);
+    renderNotifierFields(selected);
   }
 });
 
@@ -2971,9 +2997,10 @@ async function saveConfig() {
   const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked');
   config.notifierTypes = Array.from(checkboxes).map(cb => cb.value);
 
-  document.querySelectorAll('#notifierConfigFields input').forEach(el => {
-    const key = el.id.replace('cfg_', '');
-    config[key] = el.value.trim();
+  syncNotifierConfigCacheFromDOM();
+
+  Object.entries(notifierConfigCache).forEach(([key, value]) => {
+    config[key] = String(value || '').trim();
   });
 
   if (!config.username || !config.password) {
