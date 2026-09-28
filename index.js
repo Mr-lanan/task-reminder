@@ -444,7 +444,7 @@ function getDashboardPage() {
     #backupModal #backupList .history-item { padding: 12px 0; line-height: 1.5; }
     #backupModal .backup-type-badge, #backupModal .backup-latest-badge { margin-top: 2px; margin-bottom: 2px; }
 
-    #restoreBackupModal .modal-content, #unfreezeModal .modal-content, #onedriveFolderModal .modal-content { max-width: none !important; }
+    #restoreBackupModal .modal-content, #unfreezeModal .modal-content { max-width: none !important; }
     .toast { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); min-width: 0; width: calc(100vw - 28px); max-width: 520px; padding: 13px 16px; }
   }
 
@@ -637,35 +637,13 @@ function getDashboardPage() {
 <div class="modal" id="backupModal">
   <div class="modal-content">
     <h2>💾 备份与恢复</h2>
-    <div class="mode-hint" style="margin-bottom:14px;">支持 OneDrive 与通用 WebDAV。智能备份会按实际变化区分“任务数据”和“配置 / Key”；两类历史各自最多保留 20 份，互不挤占，最新状态文件始终单独保留。</div>
+    <div class="mode-hint" style="margin-bottom:14px;">支持通用 WebDAV。智能备份会按实际变化区分“任务数据”和“配置 / Key”；两类历史各自最多保留 20 份，互不挤占，最新状态文件始终单独保留。</div>
 
     <label>备份位置</label>
-    <select id="backupProvider" onchange="updateBackupProvider()">
-      <option value="onedrive">OneDrive</option>
-      <option value="custom">通用 WebDAV</option>
-    </select>
+    <div class="lunar-display" style="margin-top:0;margin-bottom:12px;">通用 WebDAV</div>
+    <input type="hidden" id="backupProvider" value="custom">
 
-    <div id="onedriveFields">
-      <label>Microsoft 租户</label>
-      <input type="text" id="onedriveTenant" value="common" placeholder="common">
-      <div class="mode-hint" style="margin-top:-8px;margin-bottom:12px;">个人 Microsoft 账号或同时支持个人/组织账号时可使用 common。</div>
-
-      <label>Client ID</label>
-      <input type="text" id="onedriveClientId" autocomplete="off" placeholder="Microsoft Entra 应用的 Application (client) ID">
-
-      <label>授权回调地址</label>
-      <input type="text" id="onedriveRedirectUri" readonly>
-      <div class="mode-hint" style="margin-top:-8px;margin-bottom:8px;">长期模式使用 OAuth 2.0 PKCE，不需要 Client Secret。请把此地址添加到 Microsoft Entra → 身份验证 → “移动和桌面应用程序”的自定义重定向 URI；权限使用 Microsoft Graph 委派权限 Files.ReadWrite。首次连接默认使用 OneDrive/TaskReminderBackup，连接后可点击“更改路径”选择任意文件夹。</div>
-      <div class="lunar-display" id="onedriveStatus" style="margin-top:0;margin-bottom:12px;">OneDrive：未连接</div>
-
-      <div style="margin:8px 0 14px 0;padding:12px;border:1px solid #e9ecef;border-radius:10px;background:#fafbfc;">
-        <label style="margin-bottom:6px;">OneDrive 备份目录</label>
-        <div class="lunar-display" id="onedriveFolderPathDisplay" style="margin:0 0 10px 0;">📁 OneDrive/TaskReminderBackup</div>
-        <button class="btn-outline btn-sm" id="onedriveChangeFolderBtn" type="button" onclick="openOneDriveFolderPicker()" disabled>📁 更改路径</button>
-      </div>
-    </div>
-
-    <div id="webdavFields" style="display:none;">
+    <div id="webdavFields">
       <label>WebDAV 地址</label>
       <input type="text" id="backupUrl" placeholder="https://example.com/remote.php/dav/files/user/">
 
@@ -700,11 +678,9 @@ function getDashboardPage() {
 
     <div class="form-actions backup-action-grid" style="justify-content:flex-start;flex-wrap:wrap;">
       <button class="btn-config" onclick="saveBackupSettings()">保存连接</button>
-      <button class="btn-success" id="onedriveConnectBtn" onclick="connectOneDrive()">连接 OneDrive</button>
       <button class="btn-warning" onclick="testBackupConnection()">测试连接</button>
       <button class="btn-backup" onclick="createRemoteBackup()">立即备份</button>
       <button class="btn-history" onclick="loadRemoteBackups()">刷新列表</button>
-      <button class="btn-danger" id="onedriveDisconnectBtn" style="display:none;" onclick="disconnectOneDrive()">断开 OneDrive</button>
     </div>
 
     <hr style="margin:18px 0;">
@@ -731,26 +707,6 @@ function getDashboardPage() {
   </div>
 </div>
 
-<!-- OneDrive 目录选择弹窗 -->
-<div class="modal" id="onedriveFolderModal">
-  <div class="modal-content" style="max-width:620px;">
-    <h2>📁 选择 OneDrive 备份目录</h2>
-    <div class="lunar-display" id="onedriveFolderPickerPath" style="margin-top:10px;margin-bottom:12px;">当前位置：OneDrive</div>
-
-    <div class="form-actions" style="justify-content:flex-start;flex-wrap:wrap;margin-bottom:10px;">
-      <button class="btn-outline" id="onedriveFolderUpBtn" type="button" onclick="goOneDriveFolderUp()">⬆️ 上一级</button>
-      <button class="btn-primary" type="button" onclick="createOneDriveFolderFromPicker()">➕ 新建文件夹</button>
-    </div>
-
-    <div id="onedriveFolderPickerList" style="min-height:120px;"><p style="color:#999;">正在读取...</p></div>
-
-    <div class="form-actions">
-      <button class="btn-outline" type="button" onclick="closeModal('onedriveFolderModal')">取消</button>
-      <button class="btn-success" type="button" onclick="selectCurrentOneDriveFolder()">选择当前目录</button>
-    </div>
-  </div>
-</div>
-
 <!-- 备份恢复选择弹窗 -->
 <div class="modal" id="restoreBackupModal">
   <div class="modal-content" style="max-width:560px;">
@@ -769,7 +725,7 @@ function getDashboardPage() {
       </select>
     </div>
 
-    <div class="mode-hint" style="margin-bottom:12px;">恢复采用合并方式：同 ID 数据会覆盖；未选择的类别和其他现有任务不会删除。远端备份连接与 OAuth 状态不会被旧备份覆盖。</div>
+    <div class="mode-hint" style="margin-bottom:12px;">恢复采用合并方式：同 ID 数据会覆盖；未选择的类别和其他现有任务不会删除。远端备份连接凭据不会被旧备份覆盖。</div>
 
     <div class="form-actions">
       <button class="btn-outline" onclick="closeModal('restoreBackupModal')">取消</button>
@@ -2514,177 +2470,10 @@ async function clearTrash() {
 }
 
 // ===== 远端备份 =====
-function updateBackupProvider() {
-  const provider = document.getElementById('backupProvider').value || 'onedrive';
-  const onedriveFields = document.getElementById('onedriveFields');
-  const webdavFields = document.getElementById('webdavFields');
-  const connectBtn = document.getElementById('onedriveConnectBtn');
-  const disconnectBtn = document.getElementById('onedriveDisconnectBtn');
-
-  if (onedriveFields) onedriveFields.style.display = provider === 'onedrive' ? 'block' : 'none';
-  if (webdavFields) webdavFields.style.display = provider === 'custom' ? 'block' : 'none';
-  if (connectBtn) connectBtn.style.display = provider === 'onedrive' ? 'inline-block' : 'none';
-
-  if (provider !== 'onedrive' && disconnectBtn) {
-    disconnectBtn.style.display = 'none';
-  }
-}
-
-function updateOneDriveStatus(connected) {
-  const status = document.getElementById('onedriveStatus');
-  const disconnectBtn = document.getElementById('onedriveDisconnectBtn');
-  const folderBtn = document.getElementById('onedriveChangeFolderBtn');
-  if (status) status.textContent = connected ? 'OneDrive：✅ 已连接' : 'OneDrive：未连接';
-  if (disconnectBtn) disconnectBtn.style.display = connected ? 'inline-block' : 'none';
-  if (folderBtn) folderBtn.disabled = !connected;
-}
-
-function updateOneDriveFolderPathDisplay(path) {
-  const el = document.getElementById('onedriveFolderPathDisplay');
-  if (!el) return;
-  el.textContent = '📁 ' + (path || 'OneDrive/TaskReminderBackup');
-}
-
-let oneDriveFolderPickerCurrent = null;
-let oneDriveFolderPickerStack = [];
-
-async function openOneDriveFolderPicker() {
-  const status = document.getElementById('onedriveStatus');
-  if (!status || !status.textContent.includes('已连接')) {
-    showToast('请先连接 OneDrive', 'error');
-    return;
-  }
-
-  oneDriveFolderPickerCurrent = null;
-  oneDriveFolderPickerStack = [];
-  openModal('onedriveFolderModal');
-  await loadOneDriveFolderLevel('');
-}
-
-async function loadOneDriveFolderLevel(parentId, pushCurrent) {
-  const list = document.getElementById('onedriveFolderPickerList');
-  const pathEl = document.getElementById('onedriveFolderPickerPath');
-  const upBtn = document.getElementById('onedriveFolderUpBtn');
-  if (!list || !pathEl || !upBtn) return;
-
-  list.innerHTML = '<p style="color:#999;">正在读取...</p>';
-
-  try {
-    const query = parentId ? ('?parentId=' + encodeURIComponent(parentId)) : '';
-    const resp = await fetch('/api/onedrive/folders' + query, { headers: getHeaders() });
-    const data = await resp.json();
-
-    if (!data.success) {
-      list.innerHTML = '<p style="color:#e74c3c;">' + escapeHtml(data.message || '读取目录失败') + '</p>';
-      return;
-    }
-
-    if (pushCurrent && oneDriveFolderPickerCurrent) {
-      oneDriveFolderPickerStack.push(oneDriveFolderPickerCurrent);
-    }
-
-    oneDriveFolderPickerCurrent = data.current || null;
-    pathEl.textContent = '当前位置：' + ((data.current && data.current.path) || 'OneDrive');
-    upBtn.disabled = oneDriveFolderPickerStack.length === 0;
-
-    const folders = Array.isArray(data.folders) ? data.folders : [];
-    if (folders.length === 0) {
-      list.innerHTML = '<p style="color:#999;text-align:center;padding:18px 0;">当前目录下没有子文件夹</p>';
-      return;
-    }
-
-    list.innerHTML = folders.map(folder =>
-      '<button type="button" class="btn-outline" style="width:100%;text-align:left;margin:0 0 8px 0;padding:11px 12px;" ' +
-      'data-id="' + encodeURIComponent(folder.id || '') + '" onclick="enterOneDriveFolder(this.dataset.id)">📁 ' + escapeHtml(folder.name || '未命名文件夹') + '</button>'
-    ).join('');
-  } catch (e) {
-    list.innerHTML = '<p style="color:#e74c3c;">读取 OneDrive 目录失败</p>';
-  }
-}
-
-async function enterOneDriveFolder(encodedId) {
-  const id = decodeURIComponent(encodedId || '');
-  if (!id) return;
-  await loadOneDriveFolderLevel(id, true);
-}
-
-async function goOneDriveFolderUp() {
-  if (oneDriveFolderPickerStack.length === 0) return;
-  const previous = oneDriveFolderPickerStack.pop();
-  const list = document.getElementById('onedriveFolderPickerList');
-  if (list) list.innerHTML = '<p style="color:#999;">正在读取...</p>';
-  try {
-    const resp = await fetch('/api/onedrive/folders?parentId=' + encodeURIComponent(previous.id || ''), { headers: getHeaders() });
-    const data = await resp.json();
-    if (!data.success) throw new Error(data.message || '读取失败');
-    oneDriveFolderPickerCurrent = data.current || previous;
-    document.getElementById('onedriveFolderPickerPath').textContent = '当前位置：' + ((data.current && data.current.path) || previous.path || 'OneDrive');
-    document.getElementById('onedriveFolderUpBtn').disabled = oneDriveFolderPickerStack.length === 0;
-    const folders = Array.isArray(data.folders) ? data.folders : [];
-    list.innerHTML = folders.length ? folders.map(folder =>
-      '<button type="button" class="btn-outline" style="width:100%;text-align:left;margin:0 0 8px 0;padding:11px 12px;" ' +
-      'data-id="' + encodeURIComponent(folder.id || '') + '" onclick="enterOneDriveFolder(this.dataset.id)">📁 ' + escapeHtml(folder.name || '未命名文件夹') + '</button>'
-    ).join('') : '<p style="color:#999;text-align:center;padding:18px 0;">当前目录下没有子文件夹</p>';
-  } catch (e) {
-    if (list) list.innerHTML = '<p style="color:#e74c3c;">读取上一级目录失败</p>';
-  }
-}
-
-async function createOneDriveFolderFromPicker() {
-  if (!oneDriveFolderPickerCurrent || !oneDriveFolderPickerCurrent.id) return;
-  const name = prompt('请输入新文件夹名称');
-  if (!name) return;
-
-  try {
-    const resp = await fetch('/api/onedrive/folders', {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ parentId: oneDriveFolderPickerCurrent.id, name: name.trim() })
-    });
-    const data = await resp.json();
-    if (!data.success) {
-      showToast(data.message || '新建文件夹失败', 'error');
-      return;
-    }
-    showToast('文件夹已创建');
-    await loadOneDriveFolderLevel(oneDriveFolderPickerCurrent.id);
-  } catch (e) {
-    showToast('新建文件夹失败', 'error');
-  }
-}
-
-async function selectCurrentOneDriveFolder() {
-  if (!oneDriveFolderPickerCurrent || !oneDriveFolderPickerCurrent.id) {
-    showToast('当前目录不可选择', 'error');
-    return;
-  }
-
-  try {
-    const resp = await fetch('/api/onedrive/folder-select', {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ folderId: oneDriveFolderPickerCurrent.id })
-    });
-    const data = await resp.json();
-    if (!data.success) {
-      showToast(data.message || '保存备份路径失败', 'error');
-      return;
-    }
-
-    updateOneDriveFolderPathDisplay(data.path || oneDriveFolderPickerCurrent.path);
-    closeModal('onedriveFolderModal');
-    showToast('OneDrive 备份目录已更新');
-    await loadRemoteBackups();
-  } catch (e) {
-    showToast('保存备份路径失败', 'error');
-  }
-}
-
 async function openBackupModal() {
   openModal('backupModal');
   const backupList = document.getElementById('backupList');
   backupList.innerHTML = '<p style="color:#999;">正在读取...</p>';
-  document.getElementById('onedriveRedirectUri').value = window.location.origin + '/api/onedrive/callback';
   let canLoadList = false;
 
   try {
@@ -2693,7 +2482,6 @@ async function openBackupModal() {
 
     if (data.success) {
       const settings = data.settings || {};
-      document.getElementById('backupProvider').value = settings.provider || 'onedrive';
       document.getElementById('backupScope').value = settings.scope || 'both';
       document.getElementById('backupAutoEnabled').checked = settings.autoEnabled !== false;
       const autoLastTime = document.getElementById('backupAutoLastTime');
@@ -2716,38 +2504,26 @@ async function openBackupModal() {
         }
       }
 
-      document.getElementById('onedriveTenant').value = settings.tenant || 'common';
-      document.getElementById('onedriveClientId').value = settings.clientId || '';
-      updateOneDriveStatus(!!settings.onedriveConnected);
-      updateOneDriveFolderPathDisplay(settings.onedriveFolderPath || 'OneDrive/TaskReminderBackup');
-
       document.getElementById('backupUrl').value = settings.url || '';
       document.getElementById('backupFolder').value = settings.folder || 'TaskReminderBackup';
       document.getElementById('backupUsername').value = settings.username || '';
       document.getElementById('backupPassword').value = settings.password || '';
-
-      const provider = settings.provider || 'onedrive';
-      canLoadList = provider === 'onedrive'
-        ? !!settings.onedriveConnected
-        : !!(settings.url && settings.username && settings.password);
-      updateBackupProvider();
+      canLoadList = !!(settings.url && settings.username && settings.password);
     }
   } catch (e) {}
 
   if (canLoadList) {
     await loadRemoteBackups();
   } else {
-    backupList.innerHTML = '<p style="color:#999;text-align:center;">请先配置并连接远端备份</p>';
+    backupList.innerHTML = '<p style="color:#999;text-align:center;">请先配置 WebDAV 备份</p>';
   }
 }
 
 function getBackupSettingsFromForm() {
   return {
-    provider: document.getElementById('backupProvider').value || 'onedrive',
+    provider: 'custom',
     scope: document.getElementById('backupScope').value || 'both',
     autoEnabled: document.getElementById('backupAutoEnabled').checked,
-    tenant: document.getElementById('onedriveTenant').value.trim() || 'common',
-    clientId: document.getElementById('onedriveClientId').value.trim(),
     url: document.getElementById('backupUrl').value.trim(),
     folder: document.getElementById('backupFolder').value.trim() || 'TaskReminderBackup',
     username: document.getElementById('backupUsername').value.trim(),
@@ -2758,12 +2534,7 @@ function getBackupSettingsFromForm() {
 async function saveBackupSettings(showSuccess) {
   const settings = getBackupSettingsFromForm();
 
-  if (settings.provider === 'onedrive') {
-    if (!settings.clientId) {
-      showToast('请填写 OneDrive Client ID', 'error');
-      return false;
-    }
-  } else if (!settings.url || !settings.username || !settings.password) {
+  if (!settings.url || !settings.username || !settings.password) {
     showToast('请填写 WebDAV 地址、用户名和密码/应用密码', 'error');
     return false;
   }
@@ -2777,91 +2548,17 @@ async function saveBackupSettings(showSuccess) {
     const data = await resp.json();
 
     if (!data.success) {
-      showToast(data.message || '保存远端备份配置失败', 'error');
+      showToast(data.message || '保存 WebDAV 备份配置失败', 'error');
       return false;
     }
 
-    updateOneDriveStatus(!!data.onedriveConnected);
-    if (showSuccess !== false) showToast('远端备份配置已保存');
+    if (showSuccess !== false) showToast('WebDAV 备份配置已保存');
     return true;
   } catch (e) {
-    showToast('保存远端备份配置失败', 'error');
+    showToast('保存 WebDAV 备份配置失败', 'error');
     return false;
   }
 }
-
-async function connectOneDrive() {
-  if (document.getElementById('backupProvider').value !== 'onedrive') return;
-
-  const popup = window.open('about:blank', 'onedriveAuth', 'width=560,height=760');
-  if (!popup) {
-    showToast('浏览器阻止了授权窗口，请允许弹出窗口后重试', 'error');
-    return;
-  }
-
-  if (!await saveBackupSettings(false)) {
-    popup.close();
-    return;
-  }
-
-  try {
-    const resp = await fetch('/api/onedrive/auth-url', { headers: getHeaders() });
-    const data = await resp.json();
-    if (!data.success || !data.authorizationUrl) {
-      popup.close();
-      showToast(data.message || '生成 OneDrive 授权地址失败', 'error');
-      return;
-    }
-    document.getElementById('onedriveRedirectUri').value = data.redirectUri || (window.location.origin + '/api/onedrive/callback');
-    popup.location.href = data.authorizationUrl;
-  } catch (e) {
-    popup.close();
-    showToast('连接 OneDrive 失败', 'error');
-  }
-}
-
-async function disconnectOneDrive() {
-  if (!confirm('确定断开 OneDrive？远端已有备份不会被删除。')) return;
-
-  try {
-    const resp = await fetch('/api/onedrive/disconnect', {
-      method: 'POST',
-      headers: getHeaders()
-    });
-    const data = await resp.json();
-    if (data.success) {
-      updateOneDriveStatus(false);
-      document.getElementById('backupList').innerHTML = '<p style="color:#999;text-align:center;">OneDrive 已断开</p>';
-      showToast('OneDrive 已断开');
-    } else {
-      showToast(data.message || '断开 OneDrive 失败', 'error');
-    }
-  } catch (e) {
-    showToast('断开 OneDrive 失败', 'error');
-  }
-}
-
-window.addEventListener('message', async (event) => {
-  if (event.origin !== window.location.origin) return;
-  if (!event.data || event.data.type !== 'task-reminder-onedrive-connected') return;
-
-  if (!event.data.success) {
-    updateOneDriveStatus(false);
-    showToast('OneDrive 授权失败，请检查配置后重试', 'error');
-    return;
-  }
-
-  updateOneDriveStatus(true);
-  showToast('OneDrive 已连接');
-  try {
-    const resp = await fetch('/api/backup-settings', { headers: getHeaders() });
-    const data = await resp.json();
-    if (data.success && data.settings) {
-      updateOneDriveFolderPathDisplay(data.settings.onedriveFolderPath || 'OneDrive/TaskReminderBackup');
-    }
-  } catch (e) {}
-  await loadRemoteBackups();
-});
 
 async function testBackupConnection() {
   if (!await saveBackupSettings(false)) return;
@@ -2871,7 +2568,7 @@ async function testBackupConnection() {
     const resp = await fetch('/api/backup-test', {
       method: 'POST',
       headers: getHeaders(),
-      body: JSON.stringify({ provider: document.getElementById('backupProvider').value })
+      body: JSON.stringify({ provider: 'custom' })
     });
     const data = await resp.json();
 
@@ -4184,58 +3881,6 @@ export default {
       });
     }
 
-    // ---------- OneDrive OAuth 回调（Microsoft 重定向回此地址时没有本系统 Bearer Token） ----------
-    if (path === '/api/onedrive/callback' && method === 'GET') {
-      const state = url.searchParams.get('state') || '';
-      const code = url.searchParams.get('code') || '';
-      const oauthError = url.searchParams.get('error') || '';
-      const oauthErrorDescription = url.searchParams.get('error_description') || '';
-
-      const htmlResponse = (ok, message) => new Response(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>OneDrive 授权</title>
-<style>body{font-family:-apple-system,sans-serif;background:#f0f2f5;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}.box{background:#fff;padding:28px;border-radius:14px;max-width:520px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.1);text-align:center}.ok{color:#1b8f4d}.err{color:#d63031}</style></head>
-<body><div class="box"><h2 class="${ok ? 'ok' : 'err'}">${ok ? '✅ OneDrive 已连接' : '❌ OneDrive 连接失败'}</h2><p>${escapeHtmlServer(message)}</p><p style="color:#888;font-size:13px;">${ok ? '可以关闭此窗口并返回任务提醒页面。' : '请关闭窗口，检查 OneDrive 配置后重试。'}</p></div>
-<script>try{if(window.opener){window.opener.postMessage({type:'task-reminder-onedrive-connected',success:${ok ? 'true' : 'false'}},window.location.origin);}}catch(e){}${ok ? 'setTimeout(()=>window.close(),1200);' : ''}</script></body></html>`, {
-        status: ok ? 200 : 400,
-        headers: { 'Content-Type': 'text/html;charset=UTF-8' }
-      });
-
-      if (oauthError) {
-        return htmlResponse(false, oauthErrorDescription || oauthError);
-      }
-      if (!state || !code) {
-        return htmlResponse(false, '授权回调缺少 code 或 state');
-      }
-
-      const stateKey = 'onedrive_oauth_state_' + state;
-      const stateRaw = await kv.get(stateKey);
-      await kv.delete(stateKey);
-      if (!stateRaw) {
-        return htmlResponse(false, '授权状态已失效，请重新发起连接');
-      }
-
-      let stateData = {};
-      try { stateData = JSON.parse(stateRaw); } catch (e) {}
-
-      try {
-        const latestRaw = await kv.get('config');
-        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
-        const settings = getBackupSettingsFromConfig(latestConfig);
-        validateOneDriveSettings(settings, false);
-        const redirectUri = stateData.redirectUri || (url.origin + '/api/onedrive/callback');
-        const codeVerifier = stateData.codeVerifier || '';
-        if (!codeVerifier) throw new Error('PKCE 授权状态缺少 code_verifier，请重新连接 OneDrive');
-        const tokenData = await exchangeOneDriveAuthorizationCode(settings, code, redirectUri, codeVerifier);
-        await verifyOneDriveToken(tokenData.access_token);
-        await saveOneDriveTokens(kv, tokenData, 'pkce');
-        const folderInfo = await ensureConfiguredOneDriveBackupFolder(kv, tokenData.access_token);
-        queueAutoBackup(ctx, kv, '连接 OneDrive');
-        return htmlResponse(true, '授权成功，当前备份目录：' + folderInfo.path + '。');
-      } catch (e) {
-        return htmlResponse(false, e.message || 'OneDrive 授权失败');
-      }
-    }
-
     const auth = request.headers.get('Authorization');
     let authed = false;
 
@@ -4850,7 +4495,10 @@ export default {
 
     // ---------- 远端备份设置 ----------
     if (path === '/api/backup-settings' && method === 'GET') {
-      const settings = getBackupSettingsFromConfig(config);
+      await purgeLegacyOneDriveData(kv);
+      const latestRaw = await kv.get('config');
+      const latestConfig = latestRaw ? JSON.parse(latestRaw) : config;
+      const settings = getBackupSettingsFromConfig(latestConfig);
 
       return new Response(JSON.stringify({
         success: true,
@@ -4863,111 +4511,16 @@ export default {
     if (path === '/api/backup-settings' && method === 'POST') {
       try {
         const body = await request.json();
-        const result = await saveBackupSettingsToConfig(kv, body);
+        await saveBackupSettingsToConfig(kv, body);
         queueAutoBackup(ctx, kv, '修改备份设置');
 
         return new Response(JSON.stringify({
-          success: true,
-          onedriveConnected: !!result.onedriveConnected
+          success: true
         }), {
           headers: corsHeaders
         });
       } catch (e) {
         return errorResponse(e.message || '保存远端备份配置失败', 400);
-      }
-    }
-
-    // ---------- OneDrive OAuth ----------
-    if (path === '/api/onedrive/auth-url' && method === 'GET') {
-      try {
-        const latestRaw = await kv.get('config');
-        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
-        const settings = getBackupSettingsFromConfig(latestConfig);
-        if (settings.provider !== 'onedrive') throw new Error('当前备份位置不是 OneDrive');
-        validateOneDriveSettings(settings, false);
-
-        const redirectUri = url.origin + '/api/onedrive/callback';
-        const state = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
-        const codeVerifier = createPkceVerifier();
-        const codeChallenge = await createPkceChallenge(codeVerifier);
-        await kv.put('onedrive_oauth_state_' + state, JSON.stringify({
-          redirectUri,
-          codeVerifier,
-          createdAt: new Date().toISOString()
-        }), { expirationTtl: 10 * 60 });
-
-        return new Response(JSON.stringify({
-          success: true,
-          authorizationUrl: buildOneDriveAuthorizationUrl(settings, redirectUri, state, codeChallenge),
-          redirectUri
-        }), {
-          headers: corsHeaders
-        });
-      } catch (e) {
-        return errorResponse(e.message || '生成 OneDrive 授权地址失败', 400);
-      }
-    }
-
-    if (path === '/api/onedrive/disconnect' && method === 'POST') {
-      const rawConfig = await kv.get('config');
-      const existing = rawConfig ? JSON.parse(rawConfig) : {};
-      delete existing.onedriveRefreshToken;
-      delete existing.onedriveAccessToken;
-      delete existing.onedriveAccessTokenExpiresAt;
-      delete existing.onedriveAuthMode;
-      delete existing.onedriveClientSecret;
-      await kv.put('config', JSON.stringify(existing));
-
-      return new Response(JSON.stringify({ success: true }), {
-        headers: corsHeaders
-      });
-    }
-
-    // ---------- OneDrive 目录浏览 / 新建 / 选择 ----------
-    if (path === '/api/onedrive/folders' && method === 'GET') {
-      try {
-        const latestRaw = await kv.get('config');
-        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
-        const settings = getBackupSettingsFromConfig(latestConfig);
-        validateOneDriveSettings(settings, true);
-        const token = await getOneDriveAccessToken(kv, latestConfig);
-        const parentId = url.searchParams.get('parentId') || '';
-        const result = await listOneDriveFolders(token, parentId);
-        return new Response(JSON.stringify({ success: true, ...result }), { headers: corsHeaders });
-      } catch (e) {
-        return errorResponse(e.message || '读取 OneDrive 目录失败', 500);
-      }
-    }
-
-    if (path === '/api/onedrive/folders' && method === 'POST') {
-      try {
-        const body = await request.json();
-        const latestRaw = await kv.get('config');
-        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
-        const settings = getBackupSettingsFromConfig(latestConfig);
-        validateOneDriveSettings(settings, true);
-        const token = await getOneDriveAccessToken(kv, latestConfig);
-        const result = await createOneDriveFolder(token, body.parentId || '', body.name || '');
-        return new Response(JSON.stringify({ success: true, folder: result }), { headers: corsHeaders });
-      } catch (e) {
-        return errorResponse(e.message || '新建 OneDrive 文件夹失败', 400);
-      }
-    }
-
-    if (path === '/api/onedrive/folder-select' && method === 'POST') {
-      try {
-        const body = await request.json();
-        const latestRaw = await kv.get('config');
-        const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
-        const settings = getBackupSettingsFromConfig(latestConfig);
-        validateOneDriveSettings(settings, true);
-        const token = await getOneDriveAccessToken(kv, latestConfig);
-        const item = await getOneDriveFolderItem(token, body.folderId || '');
-        await saveOneDriveFolderSelection(kv, item.id, item.path);
-        queueAutoBackup(ctx, kv, '修改 OneDrive 备份目录');
-        return new Response(JSON.stringify({ success: true, folderId: item.id, path: item.path }), { headers: corsHeaders });
-      } catch (e) {
-        return errorResponse(e.message || '保存 OneDrive 备份目录失败', 400);
       }
     }
 
@@ -5608,28 +5161,19 @@ async function cleanupExpiredTrash(kv, nowMs) {
   await kv.put(dayKey, '1', { expirationTtl: 2 * 24 * 60 * 60 });
 }
 
-function normalizeBackupProvider(value) {
-  return value === 'custom' ? 'custom' : 'onedrive';
+function normalizeBackupProvider() {
+  return 'custom';
 }
 
 function normalizeBackupSettings(input) {
   input = input || {};
   return {
-    provider: normalizeBackupProvider(input.provider),
+    provider: 'custom',
     scope: ['config', 'tasks', 'both'].includes(input.scope) ? input.scope : 'both',
     autoEnabled: input.autoEnabled !== false,
     autoLastAt: String(input.autoLastAt || ''),
     autoLastError: String(input.autoLastError || ''),
     autoLastSummary: String(input.autoLastSummary || ''),
-    tenant: String(input.tenant || 'common').trim() || 'common',
-    clientId: String(input.clientId || '').trim(),
-    clientSecret: String(input.clientSecret || '').trim(),
-    authMode: String(input.authMode || ''),
-    refreshToken: String(input.refreshToken || ''),
-    accessToken: String(input.accessToken || ''),
-    accessTokenExpiresAt: parseInt(input.accessTokenExpiresAt, 10) || 0,
-    onedriveFolderId: String(input.onedriveFolderId || '').trim(),
-    onedriveFolderPath: String(input.onedriveFolderPath || '').trim(),
     url: String(input.url || '').trim(),
     folder: String(input.folder || 'TaskReminderBackup').trim() || 'TaskReminderBackup',
     username: String(input.username || '').trim(),
@@ -5638,23 +5182,13 @@ function normalizeBackupSettings(input) {
 }
 
 function getBackupSettingsFromConfig(config) {
-  const legacyProvider = config.backupProvider || (config.webdavUrl ? 'custom' : 'onedrive');
   return normalizeBackupSettings({
-    provider: legacyProvider,
+    provider: 'custom',
     scope: config.backupScope || config.webdavBackupScope || 'both',
     autoEnabled: config.backupAutoEnabled !== false,
     autoLastAt: config.backupAutoLastAt || '',
     autoLastError: config.backupAutoLastError || '',
     autoLastSummary: config.backupAutoLastSummary || '',
-    tenant: config.onedriveTenant || 'common',
-    clientId: config.onedriveClientId,
-    clientSecret: config.onedriveClientSecret,
-    authMode: config.onedriveAuthMode || '',
-    refreshToken: config.onedriveRefreshToken,
-    accessToken: config.onedriveAccessToken,
-    accessTokenExpiresAt: config.onedriveAccessTokenExpiresAt,
-    onedriveFolderId: config.onedriveFolderId,
-    onedriveFolderPath: config.onedriveFolderPath,
     url: config.webdavUrl,
     folder: config.webdavFolder,
     username: config.webdavUsername,
@@ -5664,18 +5198,12 @@ function getBackupSettingsFromConfig(config) {
 
 function publicBackupSettings(settings) {
   return {
-    provider: settings.provider,
+    provider: 'custom',
     scope: settings.scope,
     autoEnabled: settings.autoEnabled !== false,
     autoLastAt: settings.autoLastAt || '',
     autoLastError: settings.autoLastError || '',
     autoLastSummary: settings.autoLastSummary || '',
-    tenant: settings.tenant,
-    clientId: settings.clientId,
-    authMode: settings.authMode || '',
-    onedriveConnected: !!settings.refreshToken,
-    onedriveFolderId: settings.onedriveFolderId || '',
-    onedriveFolderPath: settings.onedriveFolderPath || 'OneDrive/TaskReminderBackup',
     url: settings.url,
     folder: settings.folder,
     username: settings.username,
@@ -5683,60 +5211,48 @@ function publicBackupSettings(settings) {
   };
 }
 
-async function saveBackupSettingsToConfig(kv, input) {
-  const next = normalizeBackupSettings(input);
+async function purgeLegacyOneDriveData(kv) {
+  let changed = false;
   const rawConfig = await kv.get('config');
   const existing = rawConfig ? JSON.parse(rawConfig) : {};
-  const previous = getBackupSettingsFromConfig(existing);
-
-  if (next.provider === 'onedrive') {
-    validateOneDriveSettings(next, false);
-  } else {
-    validateWebDavSettings(next);
+  for (const key of Object.keys(existing)) {
+    if (String(key).toLowerCase().startsWith('onedrive')) {
+      delete existing[key];
+      changed = true;
+    }
   }
+  if (existing.backupProvider && existing.backupProvider !== 'custom') {
+    existing.backupProvider = 'custom';
+    changed = true;
+  }
+  if (changed) await kv.put('config', JSON.stringify(existing));
 
-  existing.backupProvider = next.provider;
+  const staleKeys = await listKvKeysByPrefix(kv, 'onedrive_oauth_state_');
+  for (const name of staleKeys) {
+    await kv.delete(name);
+  }
+}
+
+async function saveBackupSettingsToConfig(kv, input) {
+  const next = normalizeBackupSettings(input);
+  validateWebDavSettings(next);
+
+  await purgeLegacyOneDriveData(kv);
+  const rawConfig = await kv.get('config');
+  const existing = rawConfig ? JSON.parse(rawConfig) : {};
+
+  existing.backupProvider = 'custom';
   existing.backupScope = next.scope;
   existing.webdavBackupScope = next.scope;
   existing.backupAutoEnabled = next.autoEnabled !== false;
-
-  if (next.provider === 'onedrive') {
-    const identityChanged = previous.clientId !== next.clientId || previous.tenant !== next.tenant;
-    existing.onedriveTenant = next.tenant;
-    existing.onedriveClientId = next.clientId;
-
-    if (identityChanged) {
-      delete existing.onedriveRefreshToken;
-      delete existing.onedriveAccessToken;
-      delete existing.onedriveAccessTokenExpiresAt;
-      delete existing.onedriveAuthMode;
-      delete existing.onedriveClientSecret;
-      delete existing.onedriveFolderId;
-      delete existing.onedriveFolderPath;
-    }
-  } else {
-    existing.webdavProvider = 'custom';
-    existing.webdavUrl = next.url;
-    existing.webdavFolder = next.folder;
-    existing.webdavUsername = next.username;
-    existing.webdavPassword = next.password;
-  }
+  existing.webdavProvider = 'custom';
+  existing.webdavUrl = next.url;
+  existing.webdavFolder = next.folder;
+  existing.webdavUsername = next.username;
+  existing.webdavPassword = next.password;
 
   await kv.put('config', JSON.stringify(existing));
-  const saved = getBackupSettingsFromConfig(existing);
-  return { onedriveConnected: !!saved.refreshToken };
-}
-
-function validateOneDriveSettings(settings, requireConnected = true) {
-  if (!settings.clientId) {
-    throw new Error('请先填写 OneDrive Client ID');
-  }
-  if (!/^[A-Za-z0-9._-]+$/.test(settings.tenant || 'common')) {
-    throw new Error('Microsoft 租户格式无效');
-  }
-  if (requireConnected && !settings.refreshToken) {
-    throw new Error('OneDrive 尚未授权，请先点击“连接 OneDrive”完成授权');
-  }
+  return { success: true };
 }
 
 function validateWebDavSettings(settings) {
@@ -5747,407 +5263,6 @@ function validateWebDavSettings(settings) {
   let parsed;
   try { parsed = new URL(settings.url); } catch (e) { throw new Error('WebDAV 地址格式无效'); }
   if (!/^https?:$/.test(parsed.protocol)) throw new Error('WebDAV 地址必须使用 http 或 https');
-}
-
-function base64UrlFromBytes(bytes) {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
-}
-
-function createPkceVerifier() {
-  const bytes = new Uint8Array(64);
-  crypto.getRandomValues(bytes);
-  return base64UrlFromBytes(bytes);
-}
-
-async function createPkceChallenge(verifier) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-  return base64UrlFromBytes(new Uint8Array(digest));
-}
-
-function buildOneDriveAuthorizationUrl(settings, redirectUri, state, codeChallenge) {
-  const tenant = encodeURIComponent(settings.tenant || 'common');
-  const params = new URLSearchParams({
-    client_id: settings.clientId,
-    response_type: 'code',
-    redirect_uri: redirectUri,
-    response_mode: 'query',
-    scope: 'offline_access Files.ReadWrite',
-    state,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256'
-  });
-  return 'https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/authorize?' + params.toString();
-}
-
-async function exchangeOneDriveAuthorizationCode(settings, code, redirectUri, codeVerifier) {
-  const tenant = encodeURIComponent(settings.tenant || 'common');
-  const response = await fetch('https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: settings.clientId,
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-      code_verifier: codeVerifier,
-      scope: 'offline_access Files.ReadWrite'
-    }).toString()
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.access_token) {
-    const detail = String(data.error_description || data.error || '未知错误');
-    const publicClientHint = /AADSTS7000218|client_secret|client_assertion/i.test(detail)
-      ? '。请在 Microsoft Entra → 身份验证中，把本系统回调地址添加到“移动和桌面应用程序”的自定义重定向 URI 后重新连接'
-      : '';
-    throw new Error('Microsoft PKCE 授权换取令牌失败（HTTP ' + response.status + '）：' + detail.slice(0, 180) + publicClientHint);
-  }
-  if (!data.refresh_token) {
-    throw new Error('Microsoft 未返回 refresh_token，请确认授权包含 offline_access');
-  }
-  return data;
-}
-
-async function verifyOneDriveToken(accessToken) {
-  const driveResponse = await fetch('https://graph.microsoft.com/v1.0/me/drive?$select=id,driveType,quota', {
-    headers: { 'Authorization': 'Bearer ' + accessToken }
-  });
-  if (!driveResponse.ok) {
-    const text = await driveResponse.text().catch(() => '');
-    throw new Error('OneDrive 访问失败（HTTP ' + driveResponse.status + (text ? '：' + text.slice(0, 160) : '') + '）');
-  }
-
-  return true;
-}
-
-async function saveOneDriveTokens(kv, tokenData, authMode) {
-  const rawConfig = await kv.get('config');
-  const existing = rawConfig ? JSON.parse(rawConfig) : {};
-  existing.onedriveAccessToken = tokenData.access_token || existing.onedriveAccessToken || '';
-  if (tokenData.refresh_token) existing.onedriveRefreshToken = tokenData.refresh_token;
-  existing.onedriveAccessTokenExpiresAt = Date.now() + Math.max(60, parseInt(tokenData.expires_in, 10) || 3600) * 1000;
-  if (authMode) existing.onedriveAuthMode = authMode;
-  if (authMode === 'pkce') delete existing.onedriveClientSecret;
-  await kv.put('config', JSON.stringify(existing));
-}
-
-async function getOneDriveAccessToken(kv, config) {
-  const settings = getBackupSettingsFromConfig(config);
-  validateOneDriveSettings(settings, true);
-
-  if (settings.accessToken && settings.accessTokenExpiresAt > Date.now() + 2 * 60 * 1000) {
-    return settings.accessToken;
-  }
-
-  const tenant = encodeURIComponent(settings.tenant || 'common');
-  const refreshParams = {
-    client_id: settings.clientId,
-    grant_type: 'refresh_token',
-    refresh_token: settings.refreshToken,
-    scope: 'offline_access Files.ReadWrite'
-  };
-
-  // 兼容已经存在的旧版 Client Secret 连接；重新“连接 OneDrive”后会切换到 PKCE 长期模式。
-  if (settings.authMode !== 'pkce' && settings.clientSecret) {
-    refreshParams.client_secret = settings.clientSecret;
-  }
-
-  const response = await fetch('https://login.microsoftonline.com/' + tenant + '/oauth2/v2.0/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(refreshParams).toString()
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.access_token) {
-    throw new Error('OneDrive 登录状态已失效，请重新连接（HTTP ' + response.status + '）：' + String(data.error_description || data.error || '未知错误').slice(0, 180));
-  }
-
-  await saveOneDriveTokens(kv, data);
-  return data.access_token;
-}
-
-const ONEDRIVE_BACKUP_FOLDER = 'TaskReminderBackup';
-
-function oneDriveItemApiUrl(itemId, suffix = '') {
-  return 'https://graph.microsoft.com/v1.0/me/drive/items/' + encodeURIComponent(itemId) + suffix;
-}
-
-function oneDriveFileUrl(folderId, fileName, content = false) {
-  const safeName = encodeURIComponent(fileName);
-  return oneDriveItemApiUrl(folderId, ':/' + safeName + ':' + (content ? '/content' : ''));
-}
-
-function oneDriveDisplayPathFromItem(item) {
-  if (!item) return 'OneDrive';
-  if (item.root) return 'OneDrive';
-  if (!item.parentReference || !item.parentReference.path) return 'OneDrive';
-
-  const parentPath = String(item.parentReference && item.parentReference.path || '');
-  const marker = 'root:';
-  const pos = parentPath.indexOf(marker);
-  let relative = pos >= 0 ? parentPath.slice(pos + marker.length) : '';
-  try { relative = decodeURIComponent(relative); } catch (e) {}
-  relative = relative.replace(/^\/+|\/+$/g, '');
-
-  const parts = ['OneDrive'];
-  if (relative) parts.push(relative);
-  if (item.name) parts.push(item.name);
-  return parts.join('/').replace(/\/{2,}/g, '/');
-}
-
-async function getOneDriveRootItem(accessToken) {
-  const response = await fetch('https://graph.microsoft.com/v1.0/me/drive/root?$select=id,name,root,parentReference,folder', {
-    headers: { 'Authorization': 'Bearer ' + accessToken }
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('读取 OneDrive 根目录失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
-  }
-  const item = await response.json();
-  item.path = 'OneDrive';
-  return item;
-}
-
-async function getOneDriveFolderItem(accessToken, folderId) {
-  if (!folderId) return await getOneDriveRootItem(accessToken);
-
-  const response = await fetch(oneDriveItemApiUrl(folderId, '?$select=id,name,root,parentReference,folder'), {
-    headers: { 'Authorization': 'Bearer ' + accessToken }
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('读取 OneDrive 文件夹失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
-  }
-
-  const item = await response.json();
-  if (!item.folder && !item.root) throw new Error('选择的 OneDrive 项目不是文件夹');
-  item.path = oneDriveDisplayPathFromItem(item);
-  return item;
-}
-
-async function listOneDriveFolders(accessToken, parentId) {
-  const current = await getOneDriveFolderItem(accessToken, parentId || '');
-  const response = await fetch(oneDriveItemApiUrl(current.id, '/children?$select=id,name,folder,parentReference&$top=200'), {
-    headers: { 'Authorization': 'Bearer ' + accessToken }
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('读取 OneDrive 子目录失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
-  }
-
-  const data = await response.json();
-  const folders = (Array.isArray(data.value) ? data.value : [])
-    .filter(item => item && item.folder)
-    .map(item => ({
-      id: item.id,
-      name: item.name,
-      path: oneDriveDisplayPathFromItem(item)
-    }))
-    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN'));
-
-  return {
-    current: { id: current.id, name: current.name || 'OneDrive', path: current.path || 'OneDrive' },
-    folders
-  };
-}
-
-async function createOneDriveFolder(accessToken, parentId, name) {
-  name = String(name || '').trim();
-  if (!name) throw new Error('请输入文件夹名称');
-  if (/[\\/:*?"<>|]/.test(name)) throw new Error('文件夹名称包含不支持的字符');
-
-  const parent = await getOneDriveFolderItem(accessToken, parentId || '');
-  const response = await fetch(oneDriveItemApiUrl(parent.id, '/children'), {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + accessToken,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      name,
-      folder: {},
-      '@microsoft.graph.conflictBehavior': 'rename'
-    })
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('新建 OneDrive 文件夹失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
-  }
-
-  const item = await response.json();
-  return { id: item.id, name: item.name, path: oneDriveDisplayPathFromItem(item) };
-}
-
-async function saveOneDriveFolderSelection(kv, folderId, folderPath) {
-  const rawConfig = await kv.get('config');
-  const existing = rawConfig ? JSON.parse(rawConfig) : {};
-  existing.onedriveFolderId = String(folderId || '');
-  existing.onedriveFolderPath = String(folderPath || 'OneDrive');
-  await kv.put('config', JSON.stringify(existing));
-}
-
-async function ensureDefaultOneDriveBackupFolder(accessToken) {
-  const root = await getOneDriveRootItem(accessToken);
-  const response = await fetch(oneDriveItemApiUrl(root.id, '/children?$select=id,name,folder,parentReference&$top=200'), {
-    headers: { 'Authorization': 'Bearer ' + accessToken }
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('读取 OneDrive 根目录失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
-  }
-
-  const data = await response.json();
-  const existing = (Array.isArray(data.value) ? data.value : []).find(item => item && item.name === ONEDRIVE_BACKUP_FOLDER);
-  if (existing) {
-    if (!existing.folder) throw new Error('OneDrive 根目录已存在同名项目“' + ONEDRIVE_BACKUP_FOLDER + '”，但它不是文件夹，请先重命名或删除该项目');
-    return { id: existing.id, name: existing.name, path: 'OneDrive/' + ONEDRIVE_BACKUP_FOLDER };
-  }
-
-  return await createOneDriveFolder(accessToken, root.id, ONEDRIVE_BACKUP_FOLDER);
-}
-
-async function ensureConfiguredOneDriveBackupFolder(kv, accessToken, config) {
-  let latestConfig = config;
-  if (!latestConfig) {
-    const raw = await kv.get('config');
-    latestConfig = raw ? JSON.parse(raw) : {};
-  }
-  const settings = getBackupSettingsFromConfig(latestConfig || {});
-
-  if (settings.onedriveFolderId) {
-    try {
-      const item = await getOneDriveFolderItem(accessToken, settings.onedriveFolderId);
-      const path = item.path || settings.onedriveFolderPath || 'OneDrive';
-      if (path !== settings.onedriveFolderPath) {
-        await saveOneDriveFolderSelection(kv, item.id, path);
-      }
-      return { id: item.id, path };
-    } catch (e) {
-      if (!/HTTP 404/.test(String(e && e.message || ''))) throw e;
-    }
-  }
-
-  const folder = await ensureDefaultOneDriveBackupFolder(accessToken);
-  await saveOneDriveFolderSelection(kv, folder.id, folder.path);
-  return { id: folder.id, path: folder.path };
-}
-
-async function listOneDriveBackups(kv, config) {
-  const token = await getOneDriveAccessToken(kv, config);
-  const folder = await ensureConfiguredOneDriveBackupFolder(kv, token, config);
-  const response = await fetch(oneDriveItemApiUrl(folder.id, '/children?$select=name,size,lastModifiedDateTime,file&$top=200'), {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('读取 OneDrive 备份列表失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 120) : '') + '）');
-  }
-
-  const data = await response.json();
-  const items = Array.isArray(data.value) ? data.value : [];
-  return items
-    .filter(item => item && item.file && isSafeBackupFileName(item.name))
-    .map(item => {
-      const modifiedDate = item.lastModifiedDateTime ? new Date(item.lastModifiedDateTime) : null;
-      return {
-        fileName: item.name,
-        modified: modifiedDate && !isNaN(modifiedDate.getTime())
-          ? modifiedDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })
-          : '-',
-        modifiedMs: modifiedDate && !isNaN(modifiedDate.getTime()) ? modifiedDate.getTime() : 0,
-        size: parseInt(item.size, 10) || 0
-      };
-    })
-    .sort((a, b) => {
-      if (b.modifiedMs !== a.modifiedMs) return b.modifiedMs - a.modifiedMs;
-      return b.fileName.localeCompare(a.fileName);
-    });
-}
-
-async function putOneDriveBackup(kv, config, fileName, payload) {
-  const token = await getOneDriveAccessToken(kv, config);
-  const folder = await ensureConfiguredOneDriveBackupFolder(kv, token, config);
-  const body = JSON.stringify(payload, null, 2);
-  const response = await fetch(oneDriveFileUrl(folder.id, fileName, true), {
-    method: 'PUT',
-    headers: {
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'application/json; charset=utf-8'
-    },
-    body
-  });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('上传 OneDrive 备份失败（HTTP ' + response.status + (text ? '：' + text.slice(0, 140) : '') + '）');
-  }
-}
-
-async function getOneDriveBackup(kv, config, fileName) {
-  const token = await getOneDriveAccessToken(kv, config);
-  const folder = await ensureConfiguredOneDriveBackupFolder(kv, token, config);
-  const response = await fetch(oneDriveFileUrl(folder.id, fileName, true), {
-    headers: { 'Authorization': 'Bearer ' + token },
-    redirect: 'follow'
-  });
-  if (!response.ok) throw new Error('下载 OneDrive 备份失败（HTTP ' + response.status + '）');
-
-  let data;
-  try { data = await response.json(); } catch (e) { throw new Error('OneDrive 备份文件不是有效 JSON'); }
-  if (!data || !['task-reminder-backup-v1', 'task-reminder-backup-v2'].includes(data.format)) throw new Error('不是本系统支持的备份文件');
-  return data;
-}
-
-async function deleteOneDriveBackupFile(kv, config, fileName) {
-  const token = await getOneDriveAccessToken(kv, config);
-  const folder = await ensureConfiguredOneDriveBackupFolder(kv, token, config);
-  const response = await fetch(oneDriveFileUrl(folder.id, fileName, false), {
-    method: 'DELETE',
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
-  if (!(response.ok || response.status === 204 || response.status === 404)) {
-    throw new Error('删除 OneDrive 备份失败（HTTP ' + response.status + '）');
-  }
-}
-
-async function testOneDriveConnection(kv, config) {
-  const token = await getOneDriveAccessToken(kv, config);
-  await verifyOneDriveToken(token);
-  const folder = await ensureConfiguredOneDriveBackupFolder(kv, token, config);
-
-  const fileName = 'task-reminder_connection-test-' + Date.now() + '.txt';
-  const testBody = 'Task Reminder OneDrive connection test ' + new Date().toISOString();
-  const putResponse = await fetch(oneDriveFileUrl(folder.id, fileName, true), {
-    method: 'PUT',
-    headers: {
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'text/plain; charset=utf-8'
-    },
-    body: testBody
-  });
-  if (!putResponse.ok) throw new Error('OneDrive 写入测试失败（HTTP ' + putResponse.status + '）');
-
-  try {
-    const getResponse = await fetch(oneDriveFileUrl(folder.id, fileName, true), {
-      headers: { 'Authorization': 'Bearer ' + token },
-      redirect: 'follow'
-    });
-    if (!getResponse.ok) throw new Error('OneDrive 读取测试失败（HTTP ' + getResponse.status + '）');
-    const returned = await getResponse.text();
-    if (returned !== testBody) throw new Error('OneDrive 读写校验失败：返回内容与测试内容不一致');
-  } finally {
-    await fetch(oneDriveFileUrl(folder.id, fileName, false), {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token }
-    }).catch(() => null);
-  }
-
-  return { message: 'OneDrive 连接正常，当前目录 ' + folder.path + ' 读/写/删测试通过' };
 }
 
 function webDavAuthHeader(settings) {
@@ -6362,46 +5477,26 @@ async function testWebDavConnectionForWorker(settings) {
 }
 
 async function listRemoteBackups(kv, config, settings) {
-  if (settings.provider === 'onedrive') {
-    validateOneDriveSettings(settings, true);
-    return listOneDriveBackups(kv, config);
-  }
   validateWebDavSettings(settings);
   return listWebDavBackups(settings);
 }
 
 async function putRemoteBackup(kv, config, settings, fileName, payload) {
-  if (settings.provider === 'onedrive') {
-    validateOneDriveSettings(settings, true);
-    return putOneDriveBackup(kv, config, fileName, payload);
-  }
   validateWebDavSettings(settings);
   return putWebDavBackup(settings, fileName, payload);
 }
 
 async function getRemoteBackup(kv, config, settings, fileName) {
-  if (settings.provider === 'onedrive') {
-    validateOneDriveSettings(settings, true);
-    return getOneDriveBackup(kv, config, fileName);
-  }
   validateWebDavSettings(settings);
   return getWebDavBackup(settings, fileName);
 }
 
 async function deleteRemoteBackupFile(kv, config, settings, fileName) {
-  if (settings.provider === 'onedrive') {
-    validateOneDriveSettings(settings, true);
-    return deleteOneDriveBackupFile(kv, config, fileName);
-  }
   validateWebDavSettings(settings);
   return deleteWebDavBackupFile(settings, fileName);
 }
 
 async function testRemoteBackupConnection(kv, config, settings) {
-  if (settings.provider === 'onedrive') {
-    validateOneDriveSettings(settings, true);
-    return testOneDriveConnection(kv, config);
-  }
   validateWebDavSettings(settings);
   return testWebDavConnectionForWorker(settings);
 }
@@ -6556,15 +5651,6 @@ const BACKUP_CONNECTION_FIELDS = [
   'webdavUsername',
   'webdavPassword',
   'webdavBackupScope',
-  'onedriveTenant',
-  'onedriveClientId',
-  'onedriveClientSecret',
-  'onedriveAuthMode',
-  'onedriveRefreshToken',
-  'onedriveAccessToken',
-  'onedriveAccessTokenExpiresAt',
-  'onedriveFolderId',
-  'onedriveFolderPath',
   'jwtSecret',
   'backupAutoLastAt',
   'backupAutoLastError',
@@ -6577,7 +5663,7 @@ function splitConfigForBackup(rawConfig) {
   const keys = {};
 
   for (const [key, value] of Object.entries(cfg)) {
-    if (BACKUP_CONNECTION_FIELDS.includes(key)) continue;
+    if (BACKUP_CONNECTION_FIELDS.includes(key) || String(key).toLowerCase().startsWith('onedrive')) continue;
     if (BACKUP_KEY_FIELDS.includes(key)) keys[key] = value;
     else systemConfig[key] = value;
   }
@@ -6685,7 +5771,7 @@ async function restoreBackupPayload(kv, config, backup, expiredPolicy, restoreSe
       restoredKeys = Object.keys(sections.keys).length > 0;
     }
 
-    // 远端连接、OAuth Token 与当前自动备份运行状态始终保留当前值，避免恢复后断开备份连接。
+    // 远端连接凭据与当前自动备份运行状态始终保留当前值，避免恢复后断开备份连接。
     for (const key of BACKUP_CONNECTION_FIELDS) {
       if (Object.prototype.hasOwnProperty.call(current, key)) merged[key] = current[key];
       else delete merged[key];
@@ -6801,8 +5887,7 @@ async function scheduleAutoBackup(kv, reason) {
   const settings = getBackupSettingsFromConfig(config);
 
   if (settings.autoEnabled === false) return;
-  if (settings.provider === 'onedrive' && !settings.refreshToken) return;
-  if (settings.provider === 'custom' && (!settings.url || !settings.username || !settings.password)) return;
+  if (!settings.url || !settings.username || !settings.password) return;
 
   const token = crypto.randomUUID();
   await kv.put(AUTO_BACKUP_PENDING_KEY, JSON.stringify({

@@ -2,7 +2,7 @@
   "name": "task-reminder",
   "version": "1.0.0",
   "description": "周期性任务提醒系统，部署于 Cloudflare Workers",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
     "deploy": "wrangler deploy"
   },
