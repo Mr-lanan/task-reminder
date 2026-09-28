@@ -383,6 +383,7 @@ function getDashboardPage() {
   .reverse-hint { font-size: 12px; color: #999; margin-left: 8px; cursor: pointer; text-decoration: underline; }
   .time-error { color: #e74c3c; font-size: 12px; margin-top: -12px; margin-bottom: 12px; display: none; }
   .lunar-display { font-size: 13px; color: #6c5ce7; margin-top: -8px; margin-bottom: 12px; padding: 4px 8px; background: #f3f0ff; border-radius: 6px; }
+  #backupModal .backup-provider-display { font-size: 16px; line-height: 1.5; font-weight: 600; padding: 9px 14px; }
   .reminder-preview { margin: 14px 0 16px 0; padding: 12px; background: #f3f0ff; border-radius: 8px; color: #4b3fbf; font-size: 14px; line-height: 1.7; white-space: pre-line; }
   @media (max-width:600px) {
     body { padding: 10px; overflow-x: hidden; }
@@ -637,10 +638,10 @@ function getDashboardPage() {
 <div class="modal" id="backupModal">
   <div class="modal-content">
     <h2>💾 备份与恢复</h2>
-    <div class="mode-hint" style="margin-bottom:14px;">支持通用 WebDAV。智能备份会按实际变化区分“任务数据”和“配置 / Key”；两类历史各自最多保留 20 份，互不挤占，最新状态文件始终单独保留。</div>
+    <div class="mode-hint" style="margin-bottom:14px;">支持通用 WebDAV。智能备份会按实际变化区分“任务数据”和“配置 / Key”；两类历史各自最多保留 20 份。列表会自动合并同一次备份产生的“最新状态 + 历史版本”重复项，并用 ⭐ 标出最新备份。</div>
 
     <label>备份位置</label>
-    <div class="lunar-display" style="margin-top:0;margin-bottom:12px;">通用 WebDAV</div>
+    <div class="lunar-display backup-provider-display" style="margin-top:0;margin-bottom:12px;">通用 WebDAV</div>
     <input type="hidden" id="backupProvider" value="custom">
 
     <div id="webdavFields">
@@ -669,7 +670,7 @@ function getDashboardPage() {
       <label style="display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px;">
         <input type="checkbox" id="backupAutoEnabled" style="width:auto;margin:0;" checked> 自动备份
       </label>
-      <div class="mode-hint" style="margin:0;">智能备份按实际内容判断：任务变化只备份任务；配置 / Key 变化只备份配置 / Key；两类同时变化才分别备份两份。内容没有变化时不会生成新备份。最新状态持续覆盖，历史版本按类别独立保留。</div>
+      <div class="mode-hint" style="margin:0;">智能备份按实际内容判断：任务变化只备份任务；配置 / Key 变化只备份配置 / Key；两类同时变化才分别备份。内容没有变化时不会生成新备份。最新一份会在列表中标记为 ⭐ 最新备份，历史版本按类别独立保留。</div>
       <div class="mode-hint" id="backupAutoLastTime" style="margin-top:6px;">上次自动备份时间：暂无</div>
       <div class="mode-hint" id="backupAutoLastResult" style="margin-top:4px;">结果：暂无</div>
     </div>
@@ -700,7 +701,7 @@ function getDashboardPage() {
         <button class="btn-danger btn-sm" type="button" onclick="deleteSelectedRemoteBackups()">删除所选</button>
       </div>
     </div>
-    <div class="mode-hint" style="margin-bottom:10px;">“最新状态”不计入 20 份历史，也不会被批量删除；旧版“任务 + 配置 / Key”备份仍可正常恢复。</div>
+    <div class="mode-hint" style="margin-bottom:10px;">⭐ 最新备份不会被批量删除；同一次备份产生的“最新状态文件 + 历史文件”会在列表中合并显示，旧版“任务 + 配置 / Key”备份仍可正常恢复。</div>
     <div id="backupList"><p style="color:#999;">尚未读取</p></div>
 
     <div class="form-actions"><button class="btn-outline" onclick="closeModal('backupModal')">关闭</button></div>
@@ -2622,12 +2623,76 @@ function backupTypeBadge(item) {
   return '<span class="backup-type-badge backup-type-both">🟪 任务 + 配置 / Key</span>';
 }
 
+function buildDisplayRemoteBackupItems(items) {
+  const source = Array.isArray(items) ? items.slice() : [];
+  const result = [];
+  const handled = new Set();
+
+  for (const kind of ['tasks', 'config']) {
+    const group = source
+      .filter(item => item.kind === kind)
+      .sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0));
+
+    if (group.length === 0) continue;
+
+    const latestState = group.find(item => item.isLatest);
+    const histories = group.filter(item => !item.isLatest);
+    const newestHistory = histories[0];
+
+    const duplicatePair = !!(
+      latestState &&
+      newestHistory &&
+      Number(latestState.size || 0) === Number(newestHistory.size || 0) &&
+      Math.abs(Number(latestState.modifiedMs || 0) - Number(newestHistory.modifiedMs || 0)) <= 120000
+    );
+
+    if (duplicatePair) {
+      result.push({
+        ...newestHistory,
+        displayLatest: true,
+        displayName: kind === 'tasks' ? '任务备份' : '配置 / Key 备份',
+        backupTypeLabel: ''
+      });
+      handled.add(newestHistory.fileName);
+      handled.add(latestState.fileName);
+
+      for (const item of histories.slice(1)) {
+        result.push(item);
+        handled.add(item.fileName);
+      }
+    } else {
+      if (latestState) {
+        result.push({
+          ...latestState,
+          displayLatest: true,
+          displayName: kind === 'tasks' ? '最新任务备份' : '最新配置 / Key 备份',
+          backupTypeLabel: ''
+        });
+        handled.add(latestState.fileName);
+      }
+
+      for (const item of histories) {
+        result.push(item);
+        handled.add(item.fileName);
+      }
+    }
+  }
+
+  for (const item of source) {
+    if (!handled.has(item.fileName)) result.push(item);
+  }
+
+  result.sort((a, b) => (b.modifiedMs || 0) - (a.modifiedMs || 0));
+  return result;
+}
+
 function renderRemoteBackupList() {
   const list = document.getElementById('backupList');
   if (!list) return;
   const filterEl = document.getElementById('backupListFilter');
   const filter = filterEl ? filterEl.value : 'all';
-  const items = remoteBackupItems.filter(item => backupKindMatchesFilter(item, filter));
+  const displayItems = buildDisplayRemoteBackupItems(remoteBackupItems);
+  const items = displayItems.filter(item => backupKindMatchesFilter(item, filter));
 
   if (items.length === 0) {
     list.innerHTML = '<p style="color:#999;">当前筛选下暂无备份</p>';
@@ -2636,14 +2701,16 @@ function renderRemoteBackupList() {
 
   list.innerHTML = items.map(item => {
     const size = item.size ? Math.max(1, Math.round(item.size / 1024)) + ' KB' : '-';
-    const latestBadge = item.isLatest ? '<span class="backup-latest-badge">⭐ 最新状态</span>' : '';
-    const check = item.isLatest
+    const isDisplayLatest = !!(item.displayLatest || item.isLatest);
+    const latestBadge = isDisplayLatest ? '<span class="backup-latest-badge">⭐ 最新备份</span>' : '';
+    const check = isDisplayLatest
       ? ''
       : '<input type="checkbox" class="backup-select-checkbox" data-file="' + escapeHtml(item.fileName || '') + '" style="width:auto;margin:0 8px 0 0;vertical-align:middle;">';
-    const deleteBtn = item.isLatest
+    const deleteBtn = isDisplayLatest
       ? ''
       : '<button class="btn-danger btn-sm" onclick="deleteRemoteBackup(\\\'' + encodeURIComponent(item.fileName) + '\\\')">删除</button>';
     const reason = item.backupTypeLabel ? '<div style="font-size:12px;color:#777;margin-top:4px;">' + escapeHtml(item.backupTypeLabel) + '</div>' : '';
+
     return '<div class="history-item" style="padding:12px 0;">' +
       '<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">' + check + backupTypeBadge(item) + latestBadge + '</div>' +
       '<div style="margin-top:6px;"><strong>' + escapeHtml(item.displayName || item.fileName || '-') + '</strong></div>' +
@@ -2693,7 +2760,7 @@ async function deleteSelectedRemoteBackups() {
     showToast('请先选择要删除的历史备份', 'error');
     return;
   }
-  if (!confirm('确定删除选中的 ' + selected.length + ' 份历史备份？最新状态备份不会被删除。')) return;
+  if (!confirm('确定删除选中的 ' + selected.length + ' 份历史备份？最新备份不会被删除。')) return;
 
   try {
     const resp = await fetch('/api/backups/delete-batch', {
@@ -4722,7 +4789,7 @@ export default {
       try {
         const fileName = decodeURIComponent(path.slice('/api/backups/'.length));
         if (!isSafeBackupFileName(fileName)) return errorResponse('备份文件名无效', 400);
-        if (describeBackupFileName(fileName).isLatest) return errorResponse('最新状态备份受保护，不能单独删除', 400);
+        if (describeBackupFileName(fileName).isLatest) return errorResponse('最新备份受保护，不能单独删除', 400);
 
         const latestRaw = await kv.get('config');
         const latestConfig = latestRaw ? JSON.parse(latestRaw) : {};
