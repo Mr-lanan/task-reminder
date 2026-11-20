@@ -767,7 +767,9 @@ function getDashboardPage() {
     <label>推送渠道（可多选）</label>
     <div class="config-checkbox-group" id="notifierCheckboxes">
       <label><input type="checkbox" value="serverchan"> Server酱</label>
-      <label><input type="checkbox" value="pushplus"> PushPlus</label>
+      <label><input type="checkbox" value="pushplus"> PushPlus（支持多子通道）</label>
+      <label><input type="checkbox" value="xizhi"> 息知</label>
+      <label><input type="checkbox" value="dingtalk"> 钉钉机器人（独立直连）</label>
       <label><input type="checkbox" value="telegram"> Telegram</label>
       <label><input type="checkbox" value="email"> 邮件(Resend)</label>
       <label><input type="checkbox" value="brevo"> 邮件(Brevo)</label>
@@ -2992,8 +2994,16 @@ async function openConfigModal() {
   notifierConfigCache = {
     serverchanKey: data.serverchanKey || '',
     pushplusToken: data.pushplusToken || '',
-    pushplusChannel: data.pushplusChannel === 'qq' ? 'qq' : 'wechat',
-    pushplusOption: data.pushplusOption || '',
+    // 老配置升级时自动继承原来选择的微信/QQ渠道与QQ配置编码。
+    pushplusChannels: Array.isArray(data.pushplusChannels)
+      ? data.pushplusChannels.slice()
+      : [data.pushplusChannel === 'qq' ? 'qq' : 'wechat'],
+    pushplusOptions: data.pushplusOptions && typeof data.pushplusOptions === 'object' && !Array.isArray(data.pushplusOptions)
+      ? { ...data.pushplusOptions }
+      : { qq: data.pushplusOption || '' },
+    xizhiEndpoint: data.xizhiEndpoint || '',
+    dingtalkWebhook: data.dingtalkWebhook || '',
+    dingtalkSecret: data.dingtalkSecret || '',
     tgBotToken: data.tgBotToken || '',
     tgChatId: data.tgChatId || '',
     emailFrom: data.emailFrom || '',
@@ -3017,11 +3027,40 @@ async function openConfigModal() {
   openModal('configModal');
 }
 
+// PushPlus 官方发送通道。短信/语音为收费渠道，不默认勾选。
+const PUSHPLUS_SUBCHANNELS = [
+  { code: 'wechat', name: '微信公众号' },
+  { code: 'qq', name: 'QQ 机器人（个人／QQ群）' },
+  { code: 'mail', name: '邮箱' },
+  { code: 'app', name: 'PushPlus App' },
+  { code: 'extension', name: '浏览器插件／桌面客户端' },
+  { code: 'webhook', name: '第三方 Webhook' },
+  { code: 'cp', name: '企业微信应用' },
+  { code: 'clawbot', name: '微信 ClawBot' },
+  { code: 'cmcc', name: '移动新消息 ClawBot（限中国移动）' },
+  { code: 'sms', name: '短信（收费：10 积分／条）' },
+  { code: 'voice', name: '语音（收费：30 积分／通）' }
+];
+const PUSHPLUS_OPTION_HINTS = {
+  qq: ['QQ 配置编码（可选）', '留空发给自己；发到 QQ 群填写 PushPlus 里创建的群配置编码，不是群号。'],
+  mail: ['邮箱配置编码（可选）', '留空使用 PushPlus 默认邮箱；自建邮箱渠道填写其配置编码。'],
+  webhook: ['Webhook 配置编码（必填）', '先在 PushPlus 渠道配置中新增 Webhook，再填写其编码（不是 URL）。'],
+  cp: ['企业微信应用配置编码（必填）', '先在 PushPlus 配置企业微信应用，再填写自定义编码。']
+};
 function syncNotifierConfigCacheFromDOM() {
-  document.querySelectorAll('#notifierConfigFields input, #notifierConfigFields select').forEach(el => {
+  document.querySelectorAll('#notifierConfigFields input[id^="cfg_"], #notifierConfigFields select[id^="cfg_"]').forEach(el => {
+    if (el.type === 'checkbox') return;
     const key = el.id.replace('cfg_', '');
-    notifierConfigCache[key] = el.value;
+    if (key.startsWith('pushplusOpt_')) {
+      if (!notifierConfigCache.pushplusOptions || typeof notifierConfigCache.pushplusOptions !== 'object') notifierConfigCache.pushplusOptions = {};
+      notifierConfigCache.pushplusOptions[key.slice('pushplusOpt_'.length)] = el.value;
+    } else {
+      notifierConfigCache[key] = el.value;
+    }
   });
+  if (document.getElementById('pushplusSubchannelCheckboxes')) {
+    notifierConfigCache.pushplusChannels = Array.from(document.querySelectorAll('#pushplusSubchannelCheckboxes input:checked')).map(cb => cb.value);
+  }
 }
 
 function getNotifierMeta(type) {
@@ -3029,8 +3068,12 @@ function getNotifierMeta(type) {
     serverchan: { name: 'Server酱', fields: [{ key: 'serverchanKey', label: 'SendKey' }] },
     pushplus: { name: 'PushPlus', fields: [
       { key: 'pushplusToken', label: 'Token' },
-      { key: 'pushplusChannel', label: '发送渠道' },
-      { key: 'pushplusOption', label: 'QQ 配置编码（可选）', optional: true }
+      { key: 'pushplusChannels', label: '发送子通道（可多选）' }
+    ] },
+    xizhi: { name: '息知', fields: [{ key: 'xizhiEndpoint', label: '完整推送 API 地址（.send / .channel）' }] },
+    dingtalk: { name: '钉钉机器人', fields: [
+      { key: 'dingtalkWebhook', label: '群机器人 Webhook 地址' },
+      { key: 'dingtalkSecret', label: '加签密钥 Secret（可选）', optional: true }
     ] },
     telegram: { name: 'Telegram', fields: [{ key: 'tgBotToken', label: 'Bot Token' }, { key: 'tgChatId', label: 'Chat ID' }] },
     email: { name: '邮件（Resend）', fields: [{ key: 'emailFrom', label: '发件邮箱' }, { key: 'emailTo', label: '收件邮箱（多个用英文逗号分隔）' }, { key: 'emailApiKey', label: 'API Key (Resend)' }] },
@@ -3043,49 +3086,53 @@ function getNotifierMeta(type) {
 function renderNotifierFields(selectedTypes) {
   const container = document.getElementById('notifierConfigFields');
   let html = '';
-
   selectedTypes.forEach(type => {
     const meta = getNotifierMeta(type);
     const fields = meta.fields || [];
+    if (!fields.length) return;
 
-    if (fields.length) {
-      const configured = fields.every(field => field.optional || String(notifierConfigCache[field.key] || '').trim());
-      html += '<div class="config-detail">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">' +
-          '<strong>' + meta.name + '</strong>' +
-          '<span style="font-size:12px;color:' + (configured ? '#2e7d32' : '#888') + ';">' + (configured ? '✅ 已配置' : '⚪ 未配置完整') + '</span>' +
-        '</div>';
+    const configured = fields.every(field => {
+      if (field.optional) return true;
+      if (field.key === 'pushplusChannels') return Array.isArray(notifierConfigCache.pushplusChannels) && notifierConfigCache.pushplusChannels.length > 0;
+      return String(notifierConfigCache[field.key] || '').trim();
+    }) && (type !== 'pushplus' || !['webhook', 'cp'].some(code =>
+      (notifierConfigCache.pushplusChannels || []).includes(code) &&
+      !String((notifierConfigCache.pushplusOptions || {})[code] || '').trim()
+    ));
+    html += '<div class="config-detail">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">' +
+        '<strong>' + meta.name + '</strong>' +
+        '<span style="font-size:12px;color:' + (configured ? '#2e7d32' : '#888') + ';">' + (configured ? '✅ 已配置' : '⚪ 未配置完整') + '</span>' +
+      '</div>';
 
-      fields.forEach(f => {
-        const val = notifierConfigCache[f.key] || '';
-        if (type === 'pushplus' && f.key === 'pushplusChannel') {
-          const current = val === 'qq' ? 'qq' : 'wechat';
-          html += '<label>发送渠道</label><select id="cfg_pushplusChannel">' +
-            '<option value="wechat"' + (current === 'wechat' ? ' selected' : '') + '>微信公众号（原方式）</option>' +
-            '<option value="qq"' + (current === 'qq' ? ' selected' : '') + '>QQ 机器人</option>' +
-            '</select>' +
-            '<div class="mode-hint" id="pushplusChannelHint" style="margin:4px 0 12px;">' +
-              (current === 'qq' ? '先在 PushPlus 个人中心 → 渠道配置 → QQ机器人 中绑定。' : '保持原来的微信公众号推送方式。') +
-            '</div>';
-        } else if (type === 'pushplus' && f.key === 'pushplusOption') {
-          const showOption = notifierConfigCache.pushplusChannel === 'qq';
-          html += '<div id="pushplusOptionWrap" style="display:' + (showOption ? 'block' : 'none') + ';">' +
-            '<label>QQ 配置编码（可选）</label>' +
-            '<input type="text" id="cfg_pushplusOption" value="' + escapeHtml(val) + '" placeholder="留空发给自己；发到QQ群时填写配置编码">' +
-            '<div class="mode-hint" style="margin:4px 0 12px;">QQ群需先允许机器人主动消息，并在 PushPlus 创建群配置；这里填配置编码，不是QQ群号。</div>' +
-            '</div>';
-        } else {
-          html += '<label>' + f.label + '</label><input type="text" id="cfg_' + f.key + '" value="' + escapeHtml(val) + '">';
-        }
-      });
-
-      html += '<div class="notifier-action-row" style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px 0;">' +
-        '<button type="button" class="btn-success btn-sm" onclick="testNotifierChannel(\\'' + type + '\\')">🧪 测试此渠道</button>' +
-        '<button type="button" class="btn-danger btn-sm" onclick="clearNotifierChannelConfig(\\'' + type + '\\')">🗑️ 清除配置</button>' +
+    fields.forEach(f => {
+      if (type === 'pushplus' && f.key === 'pushplusChannels') {
+        const checked = Array.isArray(notifierConfigCache.pushplusChannels) ? notifierConfigCache.pushplusChannels : ['wechat'];
+        html += '<label>发送子通道（可同时勾选）</label>' +
+          '<div class="config-checkbox-group" id="pushplusSubchannelCheckboxes" style="margin-bottom:12px;">' +
+          PUSHPLUS_SUBCHANNELS.map(item => '<label><input type="checkbox" value="' + item.code + '"' +
+            (checked.includes(item.code) ? ' checked' : '') + '> ' + item.name + '</label>').join('') +
+          '</div><div class="mode-hint" style="margin-top:-5px;margin-bottom:12px;">每个子通道独立发送、独立重试；收费通道请确认账户余额。</div>';
+        const options = notifierConfigCache.pushplusOptions || {};
+        Object.keys(PUSHPLUS_OPTION_HINTS).forEach(code => {
+          if (!checked.includes(code)) return;
+          const hint = PUSHPLUS_OPTION_HINTS[code];
+          html += '<label>' + hint[0] + '</label>' +
+            '<input type="text" autocomplete="off" id="cfg_pushplusOpt_' + code + '" value="' + escapeHtml(options[code] || '') + '" placeholder="PushPlus 渠道配置编码">' +
+            '<div class="mode-hint" style="margin-top:-6px;margin-bottom:10px;">' + hint[1] + '</div>';
+        });
+      } else {
+        const val = String(notifierConfigCache[f.key] || '');
+        html += '<label>' + f.label + '</label><input type="text" autocomplete="off" id="cfg_' + f.key + '" value="' + escapeHtml(val) + '">';
+        if (type === 'xizhi') html += '<div class="mode-hint" style="margin-top:-6px;margin-bottom:12px;">个人推送填 https://xizhi.qqoq.net/你的Key.send；频道推送填 .channel 结尾的 API 地址。</div>';
+        if (type === 'dingtalk' && f.key === 'dingtalkSecret') html += '<div class="mode-hint" style="margin-top:-6px;margin-bottom:12px;">机器人开启“加签”时填写 SEC 开头的密钥；使用关键词安全模式时可留空，并在钉钉设置关键词“任务提醒”。</div>';
+      }
+    });
+    html += '<div class="notifier-action-row" style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px 0;">' +
+      '<button type="button" class="btn-success btn-sm" onclick="testNotifierChannel(\\'' + type + '\\')">🧪 测试此渠道</button>' +
+      '<button type="button" class="btn-danger btn-sm" onclick="clearNotifierChannelConfig(\\'' + type + '\\')">🗑️ 清除配置</button>' +
       '</div></div>';
-    }
   });
-
   container.innerHTML = html;
 }
 
@@ -3094,9 +3141,17 @@ async function testNotifierChannel(type) {
   const meta = getNotifierMeta(type);
   const settings = {};
   (meta.fields || []).forEach(field => {
-    settings[field.key] = String(notifierConfigCache[field.key] || '').trim();
+    if (field.key === 'pushplusChannels') {
+      settings.pushplusChannels = Array.isArray(notifierConfigCache.pushplusChannels) ? notifierConfigCache.pushplusChannels.slice() : [];
+      settings.pushplusOptions = { ...(notifierConfigCache.pushplusOptions || {}) };
+    } else {
+      settings[field.key] = String(notifierConfigCache[field.key] || '').trim();
+    }
   });
 
+  if (type === 'pushplus' && Array.isArray(settings.pushplusChannels) && settings.pushplusChannels.some(code => ['sms', 'voice'].includes(code))) {
+    if (!confirm('注意：本次 PushPlus 测试包括收费的短信或语音通道，测试成功也会扣除相应积分。确定发送吗？')) return;
+  }
   showToast('正在测试 ' + meta.name + '...');
 
   try {
@@ -3106,8 +3161,12 @@ async function testNotifierChannel(type) {
       body: JSON.stringify({ type, settings })
     });
     const data = await resp.json();
-    if (data.success) showToast('✅ ' + meta.name + ' 测试成功');
-    else showToast('❌ ' + meta.name + ' 测试失败：' + (data.message || '未知错误'), 'error');
+    const details = Array.isArray(data.results) ? data.results : [];
+    const summary = details.length > 1
+      ? '（' + details.map(item => item.type.replace('pushplus:', '') + (item.success ? '✓' : '✗')).join('、') + '）'
+      : '';
+    if (data.success) showToast('✅ ' + meta.name + ' 请求受理成功' + summary);
+    else showToast('❌ ' + meta.name + ' 测试失败' + summary + '：' + (data.message || '未知错误'), 'error');
   } catch (e) {
     showToast('❌ ' + meta.name + ' 测试请求失败', 'error');
   }
@@ -3131,7 +3190,10 @@ async function clearNotifierChannelConfig(type) {
     }
 
     (meta.fields || []).forEach(field => { notifierConfigCache[field.key] = ''; });
-    if (type === 'pushplus') notifierConfigCache.pushplusChannel = 'wechat';
+    if (type === 'pushplus') {
+      notifierConfigCache.pushplusChannels = ['wechat'];
+      notifierConfigCache.pushplusOptions = {};
+    }
     const checkbox = document.querySelector('#notifierCheckboxes input[value="' + type + '"]');
     if (checkbox) checkbox.checked = false;
     const selected = Array.from(document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked')).map(cb => cb.value);
@@ -3144,35 +3206,19 @@ async function clearNotifierChannelConfig(type) {
 
 document.addEventListener('input', function(e) {
   if (e.target && e.target.closest && e.target.closest('#notifierConfigFields')) {
-    const key = e.target.id ? e.target.id.replace('cfg_', '') : '';
-    if (key) notifierConfigCache[key] = e.target.value;
+    syncNotifierConfigCacheFromDOM();
   }
 });
 
-function updatePushplusChannelVisibility() {
-  const select = document.getElementById('cfg_pushplusChannel');
-  if (!select) return;
-  const isQQ = select.value === 'qq';
-  const wrap = document.getElementById('pushplusOptionWrap');
-  const hint = document.getElementById('pushplusChannelHint');
-  if (wrap) wrap.style.display = isQQ ? 'block' : 'none';
-  if (hint) hint.textContent = isQQ
-    ? '先在 PushPlus 个人中心 → 渠道配置 → QQ机器人 中绑定。'
-    : '保持原来的微信公众号推送方式。';
-  notifierConfigCache.pushplusChannel = isQQ ? 'qq' : 'wechat';
-}
-
 document.addEventListener('change', function(e) {
-  if (e.target && e.target.id === 'cfg_pushplusChannel') {
-    updatePushplusChannelVisibility();
-  }
-  if (e.target.closest && e.target.closest('#notifierCheckboxes')) {
+  if (e.target && e.target.closest && e.target.closest('#pushplusSubchannelCheckboxes')) {
     syncNotifierConfigCacheFromDOM();
-
-    const checkboxes = document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked');
-    const selected = Array.from(checkboxes).map(cb => cb.value);
-
-    renderNotifierFields(selected);
+    const types = Array.from(document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked')).map(cb => cb.value);
+    renderNotifierFields(types);
+  } else if (e.target && e.target.closest && e.target.closest('#notifierCheckboxes')) {
+    syncNotifierConfigCacheFromDOM();
+    const types = Array.from(document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked')).map(cb => cb.value);
+    renderNotifierFields(types);
   }
 });
 
@@ -3203,8 +3249,19 @@ async function saveConfig() {
   syncNotifierConfigCacheFromDOM();
 
   Object.entries(notifierConfigCache).forEach(([key, value]) => {
-    config[key] = String(value || '').trim();
+    if (key === 'pushplusChannels') config[key] = Array.isArray(value) ? value.slice() : [];
+    else if (key === 'pushplusOptions') {
+      config[key] = Object.fromEntries(Object.entries(value || {}).map(([code, option]) => [code, String(option || '').trim()]));
+    } else config[key] = String(value || '').trim();
   });
+  if (config.notifierTypes.includes('pushplus') && config.pushplusChannels.length === 0) {
+    showToast('PushPlus 请至少勾选一个发送子通道', 'error');
+    return;
+  }
+  if (config.notifierTypes.includes('pushplus')) {
+    const required = ['webhook', 'cp'].filter(code => config.pushplusChannels.includes(code) && !config.pushplusOptions[code]);
+    if (required.length) { showToast('请填写 PushPlus 的 ' + required.join('、') + ' 配置编码', 'error'); return; }
+  }
 
   if (!config.username || !config.password) {
     showToast('用户名密码不能空', 'error');
@@ -3743,9 +3800,7 @@ async function handleNotificationWithRetryState(kv, config, task, notifyKey, log
     };
   }
 
-  const enabledTypes = Array.isArray(config.notifierTypes)
-    ? [...new Set(config.notifierTypes.filter(Boolean))]
-    : [];
+  const enabledTypes = getNotifierTargets(config);
 
   if (enabledTypes.length === 0) {
     await addPushLog(kv, {
@@ -4850,16 +4905,19 @@ export default {
       const body = await request.json();
       const type = String(body.type || '').trim();
       const fieldMap = {
-        serverchan: ['serverchanKey'], pushplus: ['pushplusToken', 'pushplusChannel', 'pushplusOption'], telegram: ['tgBotToken', 'tgChatId'],
+        serverchan: ['serverchanKey'], pushplus: ['pushplusToken', 'pushplusChannels', 'pushplusOptions', 'pushplusChannel', 'pushplusOption'], xizhi: ['xizhiEndpoint'], dingtalk: ['dingtalkWebhook', 'dingtalkSecret'], telegram: ['tgBotToken', 'tgChatId'],
         email: ['emailFrom', 'emailTo', 'emailApiKey'], brevo: ['brevoFrom', 'brevoFromName', 'brevoTo', 'brevoApiKey'], notifyx: ['notifyxApiKey']
       };
-      const nameMap = { serverchan: 'Server酱', pushplus: 'PushPlus', telegram: 'Telegram', email: 'Resend', brevo: 'Brevo', notifyx: 'NotifyX' };
+      const nameMap = { serverchan: 'Server酱', pushplus: 'PushPlus', xizhi: '息知', dingtalk: '钉钉机器人', telegram: 'Telegram', email: 'Resend', brevo: 'Brevo', notifyx: 'NotifyX' };
       if (!fieldMap[type]) return errorResponse('未知推送渠道', 400);
 
       const testConfig = { ...config };
       const settings = body.settings && typeof body.settings === 'object' ? body.settings : {};
       fieldMap[type].forEach(key => {
-        if (Object.prototype.hasOwnProperty.call(settings, key)) testConfig[key] = String(settings[key] || '').trim();
+        if (!Object.prototype.hasOwnProperty.call(settings, key)) return;
+        if (key === 'pushplusChannels') testConfig[key] = Array.isArray(settings[key]) ? settings[key] : [];
+        else if (key === 'pushplusOptions') testConfig[key] = settings[key] && typeof settings[key] === 'object' && !Array.isArray(settings[key]) ? settings[key] : {};
+        else testConfig[key] = String(settings[key] || '').trim();
       });
 
       const result = await sendNotification(
@@ -4869,14 +4927,13 @@ export default {
         null,
         [type]
       );
-      const channelResult = result.results && result.results.length ? result.results[0] : null;
-
+      const channelResults = Array.isArray(result.results) ? result.results : [];
       return new Response(JSON.stringify({
-        success: !!(channelResult && channelResult.success),
-        message: channelResult && channelResult.error ? channelResult.error : '',
-        result: channelResult || null
+        success: result.success,
+        message: result.error || '',
+        results: channelResults
       }), {
-        status: channelResult && channelResult.success ? 200 : 400,
+        status: result.success ? 200 : 400,
         headers: corsHeaders
       });
     }
@@ -4886,7 +4943,7 @@ export default {
       const body = await request.json();
       const type = String(body.type || '').trim();
       const fieldMap = {
-        serverchan: ['serverchanKey'], pushplus: ['pushplusToken', 'pushplusChannel', 'pushplusOption'], telegram: ['tgBotToken', 'tgChatId'],
+        serverchan: ['serverchanKey'], pushplus: ['pushplusToken', 'pushplusChannels', 'pushplusOptions', 'pushplusChannel', 'pushplusOption'], xizhi: ['xizhiEndpoint'], dingtalk: ['dingtalkWebhook', 'dingtalkSecret'], telegram: ['tgBotToken', 'tgChatId'],
         email: ['emailFrom', 'emailTo', 'emailApiKey'], brevo: ['brevoFrom', 'brevoFromName', 'brevoTo', 'brevoApiKey'], notifyx: ['notifyxApiKey']
       };
       if (!fieldMap[type]) return errorResponse('未知推送渠道', 400);
@@ -4927,9 +4984,23 @@ export default {
         if (body.checkInterval > 60) body.checkInterval = 60;
       }
 
-      if (Object.prototype.hasOwnProperty.call(body, 'pushplusChannel') &&
-          !['wechat', 'qq'].includes(body.pushplusChannel)) {
-        return errorResponse('PushPlus 发送渠道无效', 400);
+      if (Object.prototype.hasOwnProperty.call(body, 'pushplusChannels')) {
+        if (!Array.isArray(body.pushplusChannels) || !body.pushplusChannels.every(ch => PUSHPLUS_CHANNEL_CODES.includes(ch))) {
+          return errorResponse('PushPlus 子通道无效', 400);
+        }
+        body.pushplusChannels = [...new Set(body.pushplusChannels)];
+        if (Array.isArray(body.notifierTypes) && body.notifierTypes.includes('pushplus') && !body.pushplusChannels.length) {
+          return errorResponse('PushPlus 必须勾选至少一个子通道', 400);
+        }
+      }
+      if (Object.prototype.hasOwnProperty.call(body, 'pushplusOptions')) {
+        if (!body.pushplusOptions || typeof body.pushplusOptions !== 'object' || Array.isArray(body.pushplusOptions)) return errorResponse('PushPlus 编码格式错误', 400);
+        body.pushplusOptions = Object.fromEntries(Object.entries(body.pushplusOptions).filter(([k]) => PUSHPLUS_CHANNEL_CODES.includes(k)).map(([k,v])=>[k,String(v||'').trim()]));
+      }
+      const saveChannels = Array.isArray(body.pushplusChannels) ? body.pushplusChannels : getPushplusChannels(existing);
+      const saveOptions = body.pushplusOptions || getPushplusOptions(existing);
+      if (Array.isArray(body.notifierTypes) && body.notifierTypes.includes('pushplus')) {
+        if (['cp', 'webhook'].some(code => saveChannels.includes(code) && !saveOptions[code])) return errorResponse('Webhook/企业微信应用通道需要配置编码', 400);
       }
 
       const newConfig = {
@@ -5745,6 +5816,11 @@ const BACKUP_KEY_FIELDS = [
   'pushplusToken',
   'pushplusChannel',
   'pushplusOption',
+  'pushplusChannels',
+  'pushplusOptions',
+  'xizhiEndpoint',
+  'dingtalkWebhook',
+  'dingtalkSecret',
   'tgBotToken',
   'tgChatId',
   'emailFrom',
@@ -6157,6 +6233,34 @@ async function safeReadText(resp) {
   }
 }
 
+// PushPlus 子通道作为独立重试目标，避免 QQ 已受理而邮箱失败时重复发送 QQ。
+const PUSHPLUS_CHANNEL_CODES = ['wechat', 'qq', 'mail', 'app', 'extension', 'webhook', 'cp', 'clawbot', 'cmcc', 'sms', 'voice'];
+function getPushplusChannels(config) {
+  if (Array.isArray(config.pushplusChannels)) {
+    return [...new Set(config.pushplusChannels.filter(code => PUSHPLUS_CHANNEL_CODES.includes(code)))];
+  }
+  // 兼容旧版本：历史单选渠道未迁移时继续沿用，默认微信公众号。
+  return [config.pushplusChannel === 'qq' ? 'qq' : 'wechat'];
+}
+function getPushplusOptions(config) {
+  if (config.pushplusOptions && typeof config.pushplusOptions === 'object' && !Array.isArray(config.pushplusOptions)) return config.pushplusOptions;
+  return { qq: String(config.pushplusOption || '').trim() };
+}
+function getNotifierTargets(config, types = null) {
+  const providers = Array.isArray(types) ? types : (Array.isArray(config.notifierTypes) ? config.notifierTypes : []);
+  const expanded = [];
+  for (const type of providers) {
+    if (type === 'pushplus') {
+      const channels = getPushplusChannels(config);
+      if (!channels.length) expanded.push('pushplus:__unconfigured__');
+      else expanded.push(...channels.map(code => 'pushplus:' + code));
+    } else if (type) {
+      expanded.push(type);
+    }
+  }
+  return [...new Set(expanded)];
+}
+
 // ============================================================
 // 推送函数
 // 注意：这里不做立即重试。
@@ -6164,8 +6268,7 @@ async function safeReadText(resp) {
 // 重试次数由 handleNotificationWithRetryState() 统一控制。
 // ============================================================
 async function sendNotification(config, title, content, task, onlyTypes = null) {
-  const configuredTypes = Array.isArray(config.notifierTypes) ? config.notifierTypes : [];
-  const enabledTypes = Array.isArray(onlyTypes) ? onlyTypes : configuredTypes;
+  const enabledTypes = getNotifierTargets(config, onlyTypes);
 
   if (enabledTypes.length === 0) {
     return {
@@ -6185,7 +6288,8 @@ async function sendNotification(config, title, content, task, onlyTypes = null) 
     };
 
     try {
-      switch (type) {
+      const provider = type.startsWith('pushplus:') ? 'pushplus' : type;
+      switch (provider) {
         case 'serverchan': {
           if (!config.serverchanKey) {
             result.error = '未配置 SendKey';
@@ -6214,41 +6318,80 @@ async function sendNotification(config, title, content, task, onlyTypes = null) 
         }
 
         case 'pushplus': {
-          if (!config.pushplusToken) {
-            result.error = '未配置 Token';
+          const subchannel = type.slice('pushplus:'.length);
+          if (!PUSHPLUS_CHANNEL_CODES.includes(subchannel)) { result.error = 'PushPlus 未选择有效子通道'; break; }
+          if (!config.pushplusToken) { result.error = '未配置 PushPlus Token'; break; }
+          const option = String(getPushplusOptions(config)[subchannel] || '').trim();
+          if (['cp', 'webhook'].includes(subchannel) && !option) {
+            result.error = subchannel + ' 通道缺少 PushPlus 配置编码';
             break;
           }
-
-          // 未配置的旧版数据继续走微信公众号；QQ 可通过 option 指定QQ群或自有机器人。
-          const pushplusChannel = config.pushplusChannel === 'qq' ? 'qq' : 'wechat';
-          const pushplusPayload = {
-            token: config.pushplusToken,
-            title,
-            content,
-            channel: pushplusChannel
-          };
-          if (pushplusChannel === 'qq') {
-            pushplusPayload.template = 'txt';
-            const option = String(config.pushplusOption || '').trim();
-            if (option) pushplusPayload.option = option;
-          }
-
+          const payload = { token: config.pushplusToken, title, content, channel: subchannel };
+          if (option) payload.option = option;
+          if (subchannel === 'qq') payload.template = 'txt';
           const pp = await fetch('https://www.pushplus.plus/send', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(pushplusPayload)
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
           });
+          const data = await safeReadJson(pp);
+          // PushPlus code 200 表示平台已受理，非最终送达成功。
+          if (pp.ok && data && Number(data.code) === 200) result.success = true;
+          else result.error = (data && (data.msg || data.message)) || ('HTTP ' + pp.status);
+          break;
+        }
 
-          const ppd = await safeReadJson(pp);
-
-          if (ppd && ppd.code === 200) {
-            result.success = true;
-          } else {
-            result.error = (ppd && (ppd.msg || ppd.message)) || ('HTTP ' + pp.status);
+        case 'xizhi': {
+          const endpoint = String(config.xizhiEndpoint || '').trim();
+          let url;
+          try { url = new URL(endpoint); } catch (e) { result.error = '请填写完整的息知 API 地址'; break; }
+          if (url.protocol !== 'https:' || url.hostname !== 'xizhi.qqoq.net' || !/^\/[A-Za-z0-9_-]+\.(send|channel)$/.test(url.pathname) || url.search || url.hash) {
+            result.error = '息知地址必须是 https://xizhi.qqoq.net/{key}.send 或 .channel'; break;
           }
+          const response = await fetch(url.toString(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: new URLSearchParams({ title, content })
+          });
+          const text = await safeReadText(response);
+          let data = null;
+          try { data = JSON.parse(text); } catch (e) {}
+          if (!response.ok) result.error = 'HTTP ' + response.status;
+          else if (data && (data.success === false ||
+               (data.code !== undefined && ![0, 200, '0', '200'].includes(data.code)) ||
+               (data.errcode !== undefined && ![0, '0'].includes(data.errcode)))) {
+            result.error = String(data.msg || data.message || '息知接口返回失败').substring(0, 100);
+          } else result.success = true;
+          break;
+        }
 
+        case 'dingtalk': {
+          const endpoint = String(config.dingtalkWebhook || '').trim();
+          let url;
+          try { url = new URL(endpoint); } catch (e) { result.error = '请填写完整钉钉机器人 Webhook'; break; }
+          if (url.protocol !== 'https:' || url.hostname !== 'oapi.dingtalk.com' || url.pathname !== '/robot/send' || !url.searchParams.has('access_token')) {
+            result.error = '钉钉机器人 Webhook 地址格式无效'; break;
+          }
+          const secret = String(config.dingtalkSecret || '').trim();
+          if (secret) {
+            // 钉钉自定义机器人标准 HMAC-SHA256 加签，Web Crypto 兼容 Cloudflare Workers。
+            const timestamp = String(Date.now());
+            const encoder = new TextEncoder();
+            const hmacKey = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+            const signed = await crypto.subtle.sign('HMAC', hmacKey, encoder.encode(timestamp + '\n' + secret));
+            const signature = btoa(String.fromCharCode(...new Uint8Array(signed)));
+            url.searchParams.set('timestamp', timestamp);
+            url.searchParams.set('sign', signature);
+          }
+          // 保证可使用“任务提醒”作为钉钉群机器人的关键词安全设置。
+          const response = await fetch(url.toString(), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ msgtype: 'text', text: { content: '任务提醒：' + title + '\n' + content } })
+          });
+          const data = await safeReadJson(response);
+          if (response.ok && data && Number(data.errcode) === 0) result.success = true;
+          else result.error = (data && (data.errmsg || data.message)) || ('HTTP ' + response.status);
           break;
         }
 
