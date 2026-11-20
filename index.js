@@ -371,6 +371,21 @@ function getDashboardPage() {
   .config-checkbox-group { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; margin-bottom: 16px; }
   .config-checkbox-group label { display: flex; align-items: center; justify-content: flex-start; gap: 8px; min-width: 0; min-height: 42px; margin: 0; padding: 8px 10px; border: 1px solid #e7e7e7; border-radius: 8px; font-weight: normal; line-height: 1.2; white-space: nowrap; }
   .config-checkbox-group input { width: 18px; height: 18px; min-width: 18px; margin: 0; padding: 0; flex: 0 0 18px; }
+  /* PushPlus 二级多选：收起时占一行，展开后在限高列表中多选 */
+  .pushplus-multiselect { border: 1px solid #d9dce4; border-radius: 10px; margin: 0 0 12px; background: #fff; }
+  .pushplus-multiselect > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 13px; list-style: none; cursor: pointer; user-select: none; }
+  .pushplus-multiselect > summary::-webkit-details-marker { display: none; }
+  .pushplus-multiselect > summary:focus-visible { outline: 2px solid #4a6cf7; outline-offset: 2px; border-radius: 9px; }
+  .pushplus-multiselect[open] > summary { border-bottom: 1px solid #e7e9f0; }
+  .pushplus-selected-summary { min-width: 0; flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pushplus-chevron { width: 9px; height: 9px; border-right: 2px solid #888; border-bottom: 2px solid #888; transform: rotate(45deg); transition: transform .15s; margin: -5px 3px 0 0; flex-shrink: 0; }
+  .pushplus-multiselect[open] .pushplus-chevron { transform: rotate(225deg); margin-top: 5px; }
+  .pushplus-multiselect-panel { padding: 8px 10px 10px; }
+  #configModal .pushplus-subchannel-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 6px; max-height: 248px; overflow-y: auto; overscroll-behavior: contain; }
+  #configModal .pushplus-subchannel-list label { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 39px; padding: 7px 8px; margin: 0; border-radius: 7px; font-weight: normal; cursor: pointer; line-height: 1.35; overflow-wrap: anywhere; }
+  #configModal .pushplus-subchannel-list label:has(input:checked) { background: #eff3ff; }
+  #configModal .pushplus-subchannel-list input[type="checkbox"] { width: 18px; height: 18px; min-width: 18px; min-height: 0; padding: 0; margin: 0; flex: 0 0 18px; accent-color: #4a6cf7; }
+  .pushplus-option-field[hidden] { display: none !important; }
   .config-detail { margin-bottom: 12px; border-left: 3px solid #4a6cf7; padding-left: 12px; }
   .toast { position: fixed; left: 50%; bottom: 30px; right: auto; background: #333; color: #fff; padding: 14px 24px; border-radius: 10px; z-index: 2000; opacity: 0; transform: translate(-50%, 20px); transition: all 0.3s; max-width: calc(100vw - 32px); width: max-content; min-width: 220px; text-align: center; line-height: 1.45; display: flex; align-items: center; justify-content: center; white-space: normal; word-break: break-word; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -432,6 +447,10 @@ function getDashboardPage() {
     #configModal .config-checkbox-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     #configModal .config-checkbox-group label { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 42px; margin: 0; padding: 8px 9px; border: 1px solid #e7e7e7; border-radius: 8px; white-space: nowrap; font-size: 14px; }
     #configModal .config-checkbox-group input { width: auto; min-height: 0; margin: 0; padding: 0; flex: 0 0 auto; }
+    #configModal .pushplus-subchannel-list { grid-template-columns: 1fr; max-height: min(260px, 40dvh); gap: 2px; }
+    #configModal .pushplus-subchannel-list label { min-height: 42px; font-size: 14px; }
+    #configModal .pushplus-subchannel-list input[type="checkbox"] { width: 18px; height: 18px; min-height: 0; margin: 0; padding: 0; flex: 0 0 18px; }
+    .pushplus-multiselect > summary { min-height: 46px; }
     #configModal .config-detail { padding-left: 10px; }
     #configModal .notifier-action-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px !important; }
     #configModal .notifier-action-row button { width: 100%; min-height: 40px; padding: 8px 5px; }
@@ -3047,6 +3066,31 @@ const PUSHPLUS_OPTION_HINTS = {
   webhook: ['Webhook 配置编码（必填）', '先在 PushPlus 渠道配置中新增 Webhook，再填写其编码（不是 URL）。'],
   cp: ['企业微信应用配置编码（必填）', '先在 PushPlus 配置企业微信应用，再填写自定义编码。']
 };
+// 只更新多选下拉框和关联配置项，不重新渲染整个表单，避免勾选时自动收起或滚动到顶部。
+function refreshPushplusSubchannelSelector() {
+  const list = document.getElementById('pushplusSubchannelCheckboxes');
+  if (!list) return;
+  const selected = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+  const names = PUSHPLUS_SUBCHANNELS.filter(item => selected.includes(item.code)).map(item => item.name);
+  const summary = document.getElementById('pushplusSelectedSummary');
+  if (summary) {
+    summary.textContent = names.length ? '已选 ' + names.length + ' 项：' + names.join('、') : '未选择子通道，点击展开勾选';
+    summary.title = names.length ? names.join('、') : '请选择至少一个发送子通道';
+  }
+  document.querySelectorAll('#pushplusOptionFields .pushplus-option-field').forEach(item => {
+    item.hidden = !selected.includes(item.dataset.pushplusOption);
+  });
+  // 配置状态跟随勾选即时刷新，避免页面提示与实际配置不一致。
+  const badge = document.getElementById('pushplusConfiguredStatus');
+  if (badge) {
+    const configured = !!String(notifierConfigCache.pushplusToken || '').trim() && selected.length > 0 &&
+      !['webhook', 'cp'].some(code => selected.includes(code) &&
+        !String((notifierConfigCache.pushplusOptions || {})[code] || '').trim());
+    badge.textContent = configured ? '✅ 已配置' : '⚪ 未配置完整';
+    badge.style.color = configured ? '#2e7d32' : '#888';
+  }
+}
+
 function syncNotifierConfigCacheFromDOM() {
   document.querySelectorAll('#notifierConfigFields input[id^="cfg_"], #notifierConfigFields select[id^="cfg_"]').forEach(el => {
     if (el.type === 'checkbox') return;
@@ -3102,25 +3146,39 @@ function renderNotifierFields(selectedTypes) {
     html += '<div class="config-detail">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">' +
         '<strong>' + meta.name + '</strong>' +
-        '<span style="font-size:12px;color:' + (configured ? '#2e7d32' : '#888') + ';">' + (configured ? '✅ 已配置' : '⚪ 未配置完整') + '</span>' +
+        '<span' + (type === 'pushplus' ? ' id="pushplusConfiguredStatus"' : '') + ' style="font-size:12px;color:' + (configured ? '#2e7d32' : '#888') + ';">' + (configured ? '✅ 已配置' : '⚪ 未配置完整') + '</span>' +
       '</div>';
 
     fields.forEach(f => {
       if (type === 'pushplus' && f.key === 'pushplusChannels') {
         const checked = Array.isArray(notifierConfigCache.pushplusChannels) ? notifierConfigCache.pushplusChannels : ['wechat'];
+        const selectedNames = PUSHPLUS_SUBCHANNELS.filter(item => checked.includes(item.code)).map(item => item.name);
         html += '<label>发送子通道（可同时勾选）</label>' +
-          '<div class="config-checkbox-group" id="pushplusSubchannelCheckboxes" style="margin-bottom:12px;">' +
-          PUSHPLUS_SUBCHANNELS.map(item => '<label><input type="checkbox" value="' + item.code + '"' +
-            (checked.includes(item.code) ? ' checked' : '') + '> ' + item.name + '</label>').join('') +
-          '</div><div class="mode-hint" style="margin-top:-5px;margin-bottom:12px;">每个子通道独立发送、独立重试；收费通道请确认账户余额。</div>';
+          '<details class="pushplus-multiselect" id="pushplusSubchannelDropdown">' +
+            '<summary aria-label="展开或收起 PushPlus 子通道多选列表">' +
+              '<span class="pushplus-selected-summary" id="pushplusSelectedSummary" title="' + escapeHtml(selectedNames.join('、')) + '">' +
+              (selectedNames.length ? '已选 ' + selectedNames.length + ' 项：' + escapeHtml(selectedNames.join('、')) : '未选择子通道，点击展开勾选') + '</span>' +
+              '<span class="pushplus-chevron" aria-hidden="true"></span>' +
+            '</summary>' +
+            '<div class="pushplus-multiselect-panel">' +
+              '<div class="pushplus-subchannel-list" id="pushplusSubchannelCheckboxes">' +
+                PUSHPLUS_SUBCHANNELS.map(item => '<label><input type="checkbox" value="' + item.code + '"' +
+                  (checked.includes(item.code) ? ' checked' : '') + '><span>' + item.name + '</span></label>').join('') +
+              '</div>' +
+              '<div class="mode-hint" style="margin-top:9px;">支持同时勾选多个通道；每个通道独立发送和重试。短信、语音会扣积分。</div>' +
+            '</div>' +
+          '</details>';
         const options = notifierConfigCache.pushplusOptions || {};
+        html += '<div id="pushplusOptionFields">';
         Object.keys(PUSHPLUS_OPTION_HINTS).forEach(code => {
-          if (!checked.includes(code)) return;
           const hint = PUSHPLUS_OPTION_HINTS[code];
-          html += '<label>' + hint[0] + '</label>' +
+          html += '<div class="pushplus-option-field" data-pushplus-option="' + code + '"' + (checked.includes(code) ? '' : ' hidden') + '>' +
+            '<label>' + hint[0] + '</label>' +
             '<input type="text" autocomplete="off" id="cfg_pushplusOpt_' + code + '" value="' + escapeHtml(options[code] || '') + '" placeholder="PushPlus 渠道配置编码">' +
-            '<div class="mode-hint" style="margin-top:-6px;margin-bottom:10px;">' + hint[1] + '</div>';
+            '<div class="mode-hint" style="margin-top:-6px;margin-bottom:10px;">' + hint[1] + '</div>' +
+            '</div>';
         });
+        html += '</div>';
       } else {
         const val = String(notifierConfigCache[f.key] || '');
         html += '<label>' + f.label + '</label><input type="text" autocomplete="off" id="cfg_' + f.key + '" value="' + escapeHtml(val) + '">';
@@ -3207,19 +3265,27 @@ async function clearNotifierChannelConfig(type) {
 document.addEventListener('input', function(e) {
   if (e.target && e.target.closest && e.target.closest('#notifierConfigFields')) {
     syncNotifierConfigCacheFromDOM();
+    if (e.target.closest('#pushplusSubchannelCheckboxes') ||
+        (e.target.id && (e.target.id === 'cfg_pushplusToken' || e.target.id.startsWith('cfg_pushplusOpt_')))) {
+      refreshPushplusSubchannelSelector();
+    }
   }
 });
 
 document.addEventListener('change', function(e) {
   if (e.target && e.target.closest && e.target.closest('#pushplusSubchannelCheckboxes')) {
     syncNotifierConfigCacheFromDOM();
-    const types = Array.from(document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked')).map(cb => cb.value);
-    renderNotifierFields(types);
+    refreshPushplusSubchannelSelector();
   } else if (e.target && e.target.closest && e.target.closest('#notifierCheckboxes')) {
     syncNotifierConfigCacheFromDOM();
     const types = Array.from(document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked')).map(cb => cb.value);
     renderNotifierFields(types);
   }
+});
+
+document.addEventListener('click', function(e) {
+  const dropdown = document.getElementById('pushplusSubchannelDropdown');
+  if (dropdown && dropdown.open && !dropdown.contains(e.target)) dropdown.open = false;
 });
 
 function validateInterval() {
