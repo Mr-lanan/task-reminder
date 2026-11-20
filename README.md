@@ -79,7 +79,7 @@ Google Voice 保号
 | 渠道 | 用途 |
 |---|---|
 | Server酱 | 微信通知 |
-| PushPlus | 微信通知 |
+| PushPlus | 微信公众号 / QQ 机器人（自己或 QQ 群） |
 | Telegram Bot | Telegram 消息 |
 | Resend | 邮件通知 |
 | Brevo | 邮件通知 |
@@ -744,7 +744,18 @@ SendKey
 
 ```text
 Token
+发送渠道：微信公众号（默认）/ QQ 机器人
+QQ 配置编码：可选，仅 QQ 机器人时使用
 ```
+
+- **微信公众号（默认）**：兼容旧版本，现有 Token 和原有推送方式不变。
+- **QQ 机器人发给自己**：先到 [PushPlus QQ 机器人渠道配置](https://www.pushplus.plus/doc/channel/qq.html) 绑定 QQ 机器人，选择 QQ 机器人并将配置编码留空，使用默认机器人私聊发送。
+- **发送到 QQ 群**：先把机器人加入 QQ 群、允许主动消息，再在 PushPlus 创建QQ群配置，将其 **配置编码** 填入。此处不填 QQ 群号。
+- 可使用 PushPlus 官方机器人或已在 PushPlus 绑定的自有机器人；若使用非默认自有机器人发给自己，也可配置相应的编码。
+
+注意：QQ 机器人日请求额度和消息展示长度由 PushPlus 账号等级决定。实名用户目前为每天 200 次、仅显示标题摘要；会员为每天 1,000 次。测试推送和定时推送使用同一发送配置。
+
+升级后无需重置 Cloudflare KV，也不影响已保存任务。新版会把所选发送渠道和 QQ 配置编码随推送配置一起备份与恢复。
 
 ## Telegram
 

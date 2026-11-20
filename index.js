@@ -2992,6 +2992,8 @@ async function openConfigModal() {
   notifierConfigCache = {
     serverchanKey: data.serverchanKey || '',
     pushplusToken: data.pushplusToken || '',
+    pushplusChannel: data.pushplusChannel === 'qq' ? 'qq' : 'wechat',
+    pushplusOption: data.pushplusOption || '',
     tgBotToken: data.tgBotToken || '',
     tgChatId: data.tgChatId || '',
     emailFrom: data.emailFrom || '',
@@ -3016,7 +3018,7 @@ async function openConfigModal() {
 }
 
 function syncNotifierConfigCacheFromDOM() {
-  document.querySelectorAll('#notifierConfigFields input').forEach(el => {
+  document.querySelectorAll('#notifierConfigFields input, #notifierConfigFields select').forEach(el => {
     const key = el.id.replace('cfg_', '');
     notifierConfigCache[key] = el.value;
   });
@@ -3025,7 +3027,11 @@ function syncNotifierConfigCacheFromDOM() {
 function getNotifierMeta(type) {
   const all = {
     serverchan: { name: 'Server酱', fields: [{ key: 'serverchanKey', label: 'SendKey' }] },
-    pushplus: { name: 'PushPlus', fields: [{ key: 'pushplusToken', label: 'Token' }] },
+    pushplus: { name: 'PushPlus', fields: [
+      { key: 'pushplusToken', label: 'Token' },
+      { key: 'pushplusChannel', label: '发送渠道' },
+      { key: 'pushplusOption', label: 'QQ 配置编码（可选）', optional: true }
+    ] },
     telegram: { name: 'Telegram', fields: [{ key: 'tgBotToken', label: 'Bot Token' }, { key: 'tgChatId', label: 'Chat ID' }] },
     email: { name: '邮件（Resend）', fields: [{ key: 'emailFrom', label: '发件邮箱' }, { key: 'emailTo', label: '收件邮箱（多个用英文逗号分隔）' }, { key: 'emailApiKey', label: 'API Key (Resend)' }] },
     brevo: { name: '邮件（Brevo）', fields: [{ key: 'brevoFrom', label: '发件邮箱' }, { key: 'brevoFromName', label: '发件人名称（可选）', optional: true }, { key: 'brevoTo', label: '收件邮箱（多个用英文逗号分隔）' }, { key: 'brevoApiKey', label: 'API Key (Brevo)' }] },
@@ -3052,7 +3058,25 @@ function renderNotifierFields(selectedTypes) {
 
       fields.forEach(f => {
         const val = notifierConfigCache[f.key] || '';
-        html += '<label>' + f.label + '</label><input type="text" id="cfg_' + f.key + '" value="' + val + '">';
+        if (type === 'pushplus' && f.key === 'pushplusChannel') {
+          const current = val === 'qq' ? 'qq' : 'wechat';
+          html += '<label>发送渠道</label><select id="cfg_pushplusChannel">' +
+            '<option value="wechat"' + (current === 'wechat' ? ' selected' : '') + '>微信公众号（原方式）</option>' +
+            '<option value="qq"' + (current === 'qq' ? ' selected' : '') + '>QQ 机器人</option>' +
+            '</select>' +
+            '<div class="mode-hint" id="pushplusChannelHint" style="margin:4px 0 12px;">' +
+              (current === 'qq' ? '先在 PushPlus 个人中心 → 渠道配置 → QQ机器人 中绑定。' : '保持原来的微信公众号推送方式。') +
+            '</div>';
+        } else if (type === 'pushplus' && f.key === 'pushplusOption') {
+          const showOption = notifierConfigCache.pushplusChannel === 'qq';
+          html += '<div id="pushplusOptionWrap" style="display:' + (showOption ? 'block' : 'none') + ';">' +
+            '<label>QQ 配置编码（可选）</label>' +
+            '<input type="text" id="cfg_pushplusOption" value="' + escapeHtml(val) + '" placeholder="留空发给自己；发到QQ群时填写配置编码">' +
+            '<div class="mode-hint" style="margin:4px 0 12px;">QQ群需先允许机器人主动消息，并在 PushPlus 创建群配置；这里填配置编码，不是QQ群号。</div>' +
+            '</div>';
+        } else {
+          html += '<label>' + f.label + '</label><input type="text" id="cfg_' + f.key + '" value="' + escapeHtml(val) + '">';
+        }
       });
 
       html += '<div class="notifier-action-row" style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px 0;">' +
@@ -3107,6 +3131,7 @@ async function clearNotifierChannelConfig(type) {
     }
 
     (meta.fields || []).forEach(field => { notifierConfigCache[field.key] = ''; });
+    if (type === 'pushplus') notifierConfigCache.pushplusChannel = 'wechat';
     const checkbox = document.querySelector('#notifierCheckboxes input[value="' + type + '"]');
     if (checkbox) checkbox.checked = false;
     const selected = Array.from(document.querySelectorAll('#notifierCheckboxes input[type="checkbox"]:checked')).map(cb => cb.value);
@@ -3124,7 +3149,23 @@ document.addEventListener('input', function(e) {
   }
 });
 
+function updatePushplusChannelVisibility() {
+  const select = document.getElementById('cfg_pushplusChannel');
+  if (!select) return;
+  const isQQ = select.value === 'qq';
+  const wrap = document.getElementById('pushplusOptionWrap');
+  const hint = document.getElementById('pushplusChannelHint');
+  if (wrap) wrap.style.display = isQQ ? 'block' : 'none';
+  if (hint) hint.textContent = isQQ
+    ? '先在 PushPlus 个人中心 → 渠道配置 → QQ机器人 中绑定。'
+    : '保持原来的微信公众号推送方式。';
+  notifierConfigCache.pushplusChannel = isQQ ? 'qq' : 'wechat';
+}
+
 document.addEventListener('change', function(e) {
+  if (e.target && e.target.id === 'cfg_pushplusChannel') {
+    updatePushplusChannelVisibility();
+  }
   if (e.target.closest && e.target.closest('#notifierCheckboxes')) {
     syncNotifierConfigCacheFromDOM();
 
@@ -4809,7 +4850,7 @@ export default {
       const body = await request.json();
       const type = String(body.type || '').trim();
       const fieldMap = {
-        serverchan: ['serverchanKey'], pushplus: ['pushplusToken'], telegram: ['tgBotToken', 'tgChatId'],
+        serverchan: ['serverchanKey'], pushplus: ['pushplusToken', 'pushplusChannel', 'pushplusOption'], telegram: ['tgBotToken', 'tgChatId'],
         email: ['emailFrom', 'emailTo', 'emailApiKey'], brevo: ['brevoFrom', 'brevoFromName', 'brevoTo', 'brevoApiKey'], notifyx: ['notifyxApiKey']
       };
       const nameMap = { serverchan: 'Server酱', pushplus: 'PushPlus', telegram: 'Telegram', email: 'Resend', brevo: 'Brevo', notifyx: 'NotifyX' };
@@ -4845,7 +4886,7 @@ export default {
       const body = await request.json();
       const type = String(body.type || '').trim();
       const fieldMap = {
-        serverchan: ['serverchanKey'], pushplus: ['pushplusToken'], telegram: ['tgBotToken', 'tgChatId'],
+        serverchan: ['serverchanKey'], pushplus: ['pushplusToken', 'pushplusChannel', 'pushplusOption'], telegram: ['tgBotToken', 'tgChatId'],
         email: ['emailFrom', 'emailTo', 'emailApiKey'], brevo: ['brevoFrom', 'brevoFromName', 'brevoTo', 'brevoApiKey'], notifyx: ['notifyxApiKey']
       };
       if (!fieldMap[type]) return errorResponse('未知推送渠道', 400);
@@ -4884,6 +4925,11 @@ export default {
         body.checkInterval = parseInt(body.checkInterval) || 5;
         if (body.checkInterval < 1) body.checkInterval = 1;
         if (body.checkInterval > 60) body.checkInterval = 60;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(body, 'pushplusChannel') &&
+          !['wechat', 'qq'].includes(body.pushplusChannel)) {
+        return errorResponse('PushPlus 发送渠道无效', 400);
       }
 
       const newConfig = {
@@ -5697,6 +5743,8 @@ const BACKUP_KEY_FIELDS = [
   'notifierTypes',
   'serverchanKey',
   'pushplusToken',
+  'pushplusChannel',
+  'pushplusOption',
   'tgBotToken',
   'tgChatId',
   'emailFrom',
@@ -6171,16 +6219,26 @@ async function sendNotification(config, title, content, task, onlyTypes = null) 
             break;
           }
 
+          // 未配置的旧版数据继续走微信公众号；QQ 可通过 option 指定QQ群或自有机器人。
+          const pushplusChannel = config.pushplusChannel === 'qq' ? 'qq' : 'wechat';
+          const pushplusPayload = {
+            token: config.pushplusToken,
+            title,
+            content,
+            channel: pushplusChannel
+          };
+          if (pushplusChannel === 'qq') {
+            pushplusPayload.template = 'txt';
+            const option = String(config.pushplusOption || '').trim();
+            if (option) pushplusPayload.option = option;
+          }
+
           const pp = await fetch('https://www.pushplus.plus/send', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-              token: config.pushplusToken,
-              title,
-              content
-            })
+            body: JSON.stringify(pushplusPayload)
           });
 
           const ppd = await safeReadJson(pp);
